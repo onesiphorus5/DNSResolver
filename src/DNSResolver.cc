@@ -1,5 +1,12 @@
 #include "DNSMessage.h"
 #include "connection.h"
+#include <iostream>
+
+using namespace std;
+
+#define MAX_DOMAIN_NAME_SIZE 1024
+
+void handle_DNSResolver_client( int );
 
 int main() {
    int resolver_server_socket = setup_server();
@@ -23,7 +30,7 @@ handle_DNSResolver_client( int client_socket ) {
    /* Read 'domain name' from client */
    std::string domain_name;
    
-   size_t buffer_size = 1024;
+   size_t buffer_size = MAX_DOMAIN_NAME_SIZE;
    char* buffer = (char*) malloc( buffer_size );
    ssize_t read_bytes;
    for ( ; ; ) { 
@@ -38,25 +45,67 @@ handle_DNSResolver_client( int client_socket ) {
       domain_name += std::string( buffer );
       memset( buffer, 0, buffer_size );
    }
-   free( buffer );
 
    /* Check if the domain name is in the cache */
    // if domain name is in the cache return the resolved ip
 
    /* Build DNS message */
-   // We are here!!
-   // DNSMessage DNS_message = build_DNS_message( domain_name );
+   // Build DNS message header section
+   srand( time(NULL) );
+   // DNSMessage_header_t message_header( rand() );
+   DNSMessage_header_t message_header( 22 );
+   message_header.set_RD( 1 );         // recursion desired
+   message_header.set_QDCOUNT( 1 );    // one question
 
-   /* Send DNS message */
-   send_DNS_query( domain_name );
+   // Build DNS message question section
+   DNSMessage_question_t question( domain_name );
+   question.set_QTYPE( 1 );         // host address
+   question.set_QCLASS( 1 );        // Internet
 
-   /* Send resolved ip address to the client */
-   /*
-   ssize_t ip_size = resolved_ip.size() + 1;
-   if ( write( client_socket, resolved_ip.c_str(), ip_size ) 
-        != ip_size ) {
-      perror( "write()" );
+   /* Send DNS query message */
+   ssize_t DNS_query_size = message_header.size();
+   DNS_query_size += question.size();
+   char* DNS_query = (char*) malloc( DNS_query_size );
+   memset( DNS_query, 0, DNS_query_size );
+   ssize_t pos = 0;
+
+   memcpy( DNS_query, message_header.serialize().c_str(), 
+           message_header.size() );
+   pos += message_header.size();
+   memcpy( DNS_query + pos, question.serialize().c_str(), question.size() );
+   for ( ssize_t i=0; i<DNS_query_size; ++i ) {
+      printf("%02hhx", DNS_query[i] );
+   }
+   cout << endl;
+
+   auto[ resolver_socket, server_addr ] = create_socket_for_nameServer();
+   ssize_t sent_cnt;
+   sent_cnt = sendto( resolver_socket, DNS_query, DNS_query_size, MSG_CONFIRM,
+                      server_addr.ai_addr, server_addr.ai_addrlen );
+   if ( sent_cnt == -1 ) {
+      perror( "sendto()" );
       exit( EXIT_FAILURE );
    }
-   */
+   free( DNS_query );
+   cout << "sent count: " << sent_cnt << endl;
+
+   /* Receive DNS response */
+   struct sockaddr_in name_server_addr;
+   socklen_t addrlen = sizeof( name_server_addr );
+   memset( buffer, 0, buffer_size );
+   ssize_t recvd_cnt = recvfrom( resolver_socket, (char *)buffer, buffer_size, 
+                                 MSG_WAITALL, 
+                                 (struct sockaddr *)&name_server_addr, 
+                                 &addrlen );
+   if ( recvd_cnt == -1 ) {
+      perror( "recvfrom()");
+      exit( EXIT_FAILURE );
+   }
+   cout << "received count: " << recvd_cnt << endl;
+   for ( ssize_t i=0; i<recvd_cnt; ++i ) {
+      printf( "%02hhx", buffer[i] );
+   }
+   cout << endl;
+
+   free( buffer );
 }
