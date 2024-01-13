@@ -40,9 +40,58 @@ DNSMessage_header_t::serialize() {
    return header_bytes;
 }
 
+// It is assumed domain names passed to the function have 
+// the following format:
+// "<nth-level domain>...<third-level domain>.<second-level domain>.<top-level domain>"
+std::string
+DNSMessage_question_t::encode_domain_name() {
+   std::string QNAME;
+
+   std::string delimiter = ".";
+   size_t left_pos=0, right_pos;
+   size_t label_size;
+   while ( ( right_pos = domain_name.find( delimiter, left_pos ) ) 
+           != std::string::npos ) {
+       label_size = right_pos - left_pos;
+       // label_size fits within a char
+       QNAME +=  (char) label_size;
+       QNAME += domain_name.substr( left_pos, label_size );
+
+       left_pos = right_pos+1;
+   }
+   label_size = domain_name.size() - left_pos;
+   // label_size fits within a char
+   QNAME += (char) label_size;
+   QNAME += domain_name.substr( left_pos, label_size );
+
+   // NULL character to mark the end
+   QNAME += (char) 0;
+
+   return QNAME;
+}
+
 std::string
 DNSMessage_question_t::serialize() {
+   // Question
+   /*
+   memcpy( DNS_query + pos, question.QNAME.c_str(), question.QNAME.size() );
+   pos += question.QNAME.size();
+   memcpy( DNS_query + pos, &question.QTYPE, sizeof( question.QTYPE ) );
+   pos += sizeof( question.QTYPE );
+   memcpy( DNS_query + pos, &question.QCLASS, sizeof( question.QCLASS ) );
+   pos += sizeof( question.QCLASS );
+   */
 
+  std::string question_bytes;
+  question_bytes += encode_domain_name();
+
+  question_bytes += (char) ( QTYPE >> 8 );
+  question_bytes += (char) QTYPE;
+
+  question_bytes += (char) ( QCLASS >> 8 );
+  question_bytes += (char) QCLASS;
+
+  return question_bytes;
 }
 
 std::string
@@ -50,53 +99,9 @@ DNSMessage_rr_t::serialize() {
 
 }
 
-std::string
-serialize_DNSMessageHeader( DNSMessage_header_t header ) {
-   return "";
-}
-
-std::string
-serialize_DNSMessageQuestion( DNSMessage_question_t question ) {
-   return "";
-}
-
-std::string
-serialize_DNSMessageResourceRecord( DNSMessage_rr_t resourceRecord ) {
-   return "";
-}
-
-// It is assumed domain names passed to the function have the following format:
-// "<nth-level domain>...<third-level domain>.<second-level domain>.<top-level domain>"
-std::string 
-encode_domain_name( std::string domain_name ) {
-    std::string QNAME;
-
-    std::string delimiter = ".";
-    size_t left_pos=0, right_pos;
-    size_t label_size;
-    while ( ( right_pos = domain_name.find( delimiter, left_pos ) ) 
-            != std::string::npos ) {
-        label_size = right_pos - left_pos;
-        // label_size fits within a char
-        QNAME +=  (char) label_size;
-        QNAME += domain_name.substr( left_pos, label_size );
-
-        left_pos = right_pos+1;
-    }
-    label_size = domain_name.size() - left_pos;
-    // label_size fits within a char
-    QNAME += (char) label_size;
-    QNAME += domain_name.substr( left_pos, label_size );
-
-    // NULL character to mark the end
-    QNAME += (char) 0;
-
-    return QNAME;
-}
-
 void
 send_DNS_query( std::string domain_name ) {
-   // Build DNS message header section
+   /* Build DNS message header section */
    srand( time(NULL) );
    // DNSMessage_header_t message_header( rand() );
    DNSMessage_header_t message_header( 22 );
@@ -109,21 +114,18 @@ send_DNS_query( std::string domain_name ) {
    }
    cout << endl;
 
+   /* Build DNS message question section */
+   DNSMessage_question_t question( domain_name );
+   question.set_QTYPE( 1 );
+   question.set_QCLASS( 1 );
 
-   // Build DNS message question section
-   DNSMessage_question_t question {
-      .QNAME  = encode_domain_name( domain_name ),
-      .QTYPE  = htons( (uint16_t) 1 ),
-      .QCLASS = htons( (uint16_t) 1 )
-   };
+   std::string question_bytes = question.serialize();
 
    /* Put the sections together */
    ssize_t DNS_query_size = 0;
    DNS_query_size += message_header.size();
-   DNS_query_size += question.QNAME.size();
-   DNS_query_size += sizeof( question.QTYPE );
-   DNS_query_size += sizeof( question.QCLASS );
-
+   DNS_query_size += question.size();
+  
    char* DNS_query = (char*) malloc( DNS_query_size );
    memset( DNS_query, 0, DNS_query_size );
    ssize_t pos     = 0;
@@ -132,12 +134,8 @@ send_DNS_query( std::string domain_name ) {
    pos += header_bytes.size();
 
    // Question
-   memcpy( DNS_query + pos, question.QNAME.c_str(), question.QNAME.size() );
-   pos += question.QNAME.size();
-   memcpy( DNS_query + pos, &question.QTYPE, sizeof( question.QTYPE ) );
-   pos += sizeof( question.QTYPE );
-   memcpy( DNS_query + pos, &question.QCLASS, sizeof( question.QCLASS ) );
-   pos += sizeof( question.QCLASS );
+   memcpy( DNS_query + pos, question_bytes.c_str(), question_bytes.size() );
+   pos += question_bytes.size();
 
    // Send the query to Google's DNS server
    // IP: 8.8.8.8, port: 53

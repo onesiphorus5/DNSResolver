@@ -70,13 +70,28 @@ public:
 };
 
 struct DNSMessage_question_t {
-  
-   std::string QNAME;
+private:
    std::string domain_name;
+   std::string QNAME;
    uint16_t    QTYPE;
    uint16_t    QCLASS;
 
-   std::string _QNAME();
+   std::string encode_domain_name();
+
+public:
+   DNSMessage_question_t( std::string d_name ) : domain_name{d_name} {
+      QNAME = encode_domain_name();
+   }
+
+   void set_QTYPE( uint16_t qtype ) { QTYPE = qtype; }
+   void set_QCLASS( uint16_t qclass ) { QCLASS = qclass; }
+
+   size_t size() {
+      return QNAME.size()    + 
+             sizeof( QTYPE ) +
+             sizeof( QCLASS );
+   }
+
    std::string serialize();
 };
 
