@@ -9,7 +9,9 @@
 #include <unistd.h>
 #include <ifaddrs.h>
 #include <net/if.h>
+
 #include <string>
+#include <iostream>
 
 char SOCK_PATH[] = "/tmp/DNSResolver";
 

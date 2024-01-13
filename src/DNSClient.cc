@@ -1,16 +1,22 @@
 #include "connection.h"
 
-int main(int argc, char *argv[])
+int main(int argc, const char *argv[])
 {
-   struct sockaddr_un DNSResolver_addr;
-   int client_socket;
+   if ( argc < 2 ) {
+      std::cout << "You must provide the domain name" << std::endl;
+      exit( EXIT_FAILURE );
+   }
+   const char* domain_name = argv[1];
 
+   /* Create client socket */
+   int client_socket;
    client_socket = socket(AF_UNIX, SOCK_STREAM, 0); /* Create client socket */
    if (client_socket == -1) {
       perror( "socket()" );
       exit( EXIT_FAILURE );
    }
    /* Connect to the server */
+   struct sockaddr_un DNSResolver_addr;
    memset( &DNSResolver_addr, 0, sizeof(struct sockaddr_un) );
    DNSResolver_addr.sun_family = AF_UNIX;
    strncpy( DNSResolver_addr.sun_path, SOCK_PATH, 
@@ -21,13 +27,14 @@ int main(int argc, char *argv[])
       exit( EXIT_FAILURE );
    }
    
-   // Write to the server
-   char message[] = "Hello, I'm client";
-   if ( write( client_socket, message, sizeof( message ) ) 
-        != sizeof( message ) ) {
+   /* Send the domain name to the resolver */
+   if ( write( client_socket, domain_name, strlen( domain_name )+1 ) 
+        != strlen( domain_name )+1 ) {
       perror( "write()" );
       exit( EXIT_FAILURE );
    }
 
+   /* Read the resolved ip address of the domain name from the resolver */
+   
    exit(EXIT_SUCCESS);
 }
