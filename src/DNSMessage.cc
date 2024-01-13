@@ -8,35 +8,61 @@
 using namespace std;
 
 std::string
-serialize_DNSMessageHeader( DNSMessage_header_t header ) {
-   // Convert uint16_t attributes to network byte order
-   cout << "header ID: " << header.ID << endl;
-   header.ID      = htons( header.ID );
-   header.QDCOUNT = htons( header.QDCOUNT );
-   header.ANCOUNT = htons( header.ANCOUNT );
-   header.NSCOUNT = htons( header.NSCOUNT );
-   header.ARCOUNT = htons( header.ARCOUNT );
+DNSMessage_header_t::serialize() {
+   std::string header_bytes;
 
-   char* header_bytes = reinterpret_cast<char*>( &header );
-   cout << "DNS header size: " << string( header_bytes ).size() << endl;
-   cout << "DNS header: " << string( header_bytes ) << endl;
-   return std::string( header_bytes );
+   header_bytes += (char) ( ID >> 8 );
+   header_bytes += (char) ID;
+
+   uint16_t codes = RCODE;
+   codes = codes | ( Z << 4 );
+   codes = codes | ( RA << 7 );
+   codes = codes | ( RD << 8 );
+   codes = codes | ( TC << 9 );
+   codes = codes | ( AA << 10 );
+   codes = codes | ( OPCODE << 11 );
+   codes = codes | ( QR << 15 );
+   header_bytes += (char) ( codes >> 8 );
+   header_bytes += (char) codes;
+
+   header_bytes += (char) ( QDCOUNT >> 8 );
+   header_bytes += (char) QDCOUNT;
+
+   header_bytes += (char) ( ANCOUNT >> 8 );
+   header_bytes += (char) ANCOUNT;
+
+   header_bytes += (char) ( NSCOUNT  >> 8 );
+   header_bytes += (char) NSCOUNT;
+
+   header_bytes += (char) ( ARCOUNT >> 8 );
+   header_bytes += (char) ARCOUNT;
+
+   return header_bytes;
+}
+
+std::string
+DNSMessage_question_t::serialize() {
+
+}
+
+std::string
+DNSMessage_rr_t::serialize() {
+
+}
+
+std::string
+serialize_DNSMessageHeader( DNSMessage_header_t header ) {
+   return "";
 }
 
 std::string
 serialize_DNSMessageQuestion( DNSMessage_question_t question ) {
-   // Convert uint16_t attributes to network byte order
-   question.QTYPE = htons( question.QTYPE );
-   question.QCLASS = htons( question.QCLASS );
+   return "";
+}
 
-   char* QTYPE_bytes = reinterpret_cast<char*>( &question.QTYPE );
-   char* QCLASS_bytes = reinterpret_cast<char*>( &question.QCLASS );
-
-   std::string serialized_question = question.QNAME;
-   serialized_question += std::string( QTYPE_bytes );
-   serialized_question += std::string( QCLASS_bytes );
-
-   return serialized_question;
+std::string
+serialize_DNSMessageResourceRecord( DNSMessage_rr_t resourceRecord ) {
+   return "";
 }
 
 // It is assumed domain names passed to the function have the following format:
@@ -72,24 +98,17 @@ void
 send_DNS_query( std::string domain_name ) {
    // Build DNS message header section
    srand( time(NULL) );
-   DNSMessage_header_t message_header {
-      // .ID      = htons( (uint16_t)rand() ),
-      .ID      = htons( (uint16_t)22 ),
+   // DNSMessage_header_t message_header( rand() );
+   DNSMessage_header_t message_header( 22 );
+   message_header.set_RD( 1 );
+   message_header.set_QDCOUNT( 1 );
 
-      .QR      = 0,
-      .OPCODE  = 0,
-      .AA      = 0,
-      .TC      = 0,
-      .RD      = 1,
-      .RA      = 0,
-      .Z       = 0,
-      .RCODE   = 0,
+   std::string header_bytes = message_header.serialize();
+   for ( ssize_t i=0; i<header_bytes.size(); ++i ) {
+      printf("%02hhx", header_bytes[i] );
+   }
+   cout << endl;
 
-      .QDCOUNT = htons( (uint16_t) 1 ),
-      .ANCOUNT = 0,
-      .NSCOUNT = 0,
-      .ARCOUNT = 0
-   };
 
    // Build DNS message question section
    DNSMessage_question_t question {
@@ -108,38 +127,11 @@ send_DNS_query( std::string domain_name ) {
    char* DNS_query = (char*) malloc( DNS_query_size );
    memset( DNS_query, 0, DNS_query_size );
    ssize_t pos     = 0;
-    
-   memcpy( DNS_query + pos, &message_header.ID, sizeof( message_header.ID ) );
-   pos += sizeof( message_header.ID );
+   // Header
+   memcpy( DNS_query + pos, header_bytes.c_str(), header_bytes.size() );
+   pos += header_bytes.size();
 
-   uint16_t codes = message_header.RCODE;
-   codes = codes | ( message_header.Z << 4 );
-   codes = codes | ( message_header.RA << 7 );
-   codes = codes | ( message_header.RD << 8 );
-   codes = codes | ( message_header.TC << 9 );
-   codes = codes | ( message_header.AA << 10 );
-   codes = codes | ( message_header.OPCODE << 11 );
-   codes = codes | ( message_header.QR << 15 );
-   codes = htons( codes );
-   memcpy( DNS_query + pos, &codes, sizeof( codes ) );
-   pos += sizeof( codes );
-
-   memcpy( DNS_query + pos, &message_header.QDCOUNT, 
-           sizeof( message_header.QDCOUNT ) );
-   pos += sizeof( message_header.QDCOUNT );
-
-   memcpy( DNS_query + pos, &message_header.ANCOUNT, 
-           sizeof( message_header.ANCOUNT ) );
-   pos += sizeof( message_header.ANCOUNT );
- 
-   memcpy( DNS_query + pos, &message_header.NSCOUNT, 
-           sizeof( message_header.NSCOUNT ) );
-   pos += sizeof( message_header.NSCOUNT );
-
-   memcpy( DNS_query + pos, &message_header.ARCOUNT, 
-           sizeof( message_header.ARCOUNT ) );
-   pos += sizeof( message_header.ARCOUNT );
-
+   // Question
    memcpy( DNS_query + pos, question.QNAME.c_str(), question.QNAME.size() );
    pos += question.QNAME.size();
    memcpy( DNS_query + pos, &question.QTYPE, sizeof( question.QTYPE ) );
