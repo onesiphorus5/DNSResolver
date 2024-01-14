@@ -1,5 +1,6 @@
 #include "DNSMessage.h"
 #include "connection.h"
+#include <vector>
 #include <iostream>
 
 using namespace std;
@@ -106,6 +107,30 @@ handle_DNSResolver_client( int client_socket ) {
       printf( "%02hhx", buffer[i] );
    }
    cout << endl;
+
+   DNSMessage_header_t response_header = \
+                        DNSMessage_header_t::parse_header( buffer );
+   ssize_t offset = response_header.size();
+
+   uint16_t question_count = response_header.QDCOUNT;
+   std::vector<DNSMessage_question_t> questions;
+   for ( int i=0; i<question_count; ++i ) {
+      auto[ r_question, bytes_parsed ] = \
+                  DNSMessage_question_t::parse_question( buffer, offset );
+      questions.push_back( r_question );
+      offset += bytes_parsed;
+   }
+
+   /*
+   uint16_t answer_count = response_header.ANCOUNT;
+   std::vector<DNSMessage_rr_t> answers;
+   for ( int i=0; i<answer_count; ++i ) {
+      auto[ answer, bytes_parsed ] = \
+                  DNSMessage_rr_t::parse_resource_record( buffer, offset );
+      answers.push_back( answer );
+      offset += bytes_parsed;
+   }
+   */
 
    free( buffer );
 }

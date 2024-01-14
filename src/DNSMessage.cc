@@ -40,6 +40,58 @@ DNSMessage_header_t::serialize() {
    return header_bytes;
 }
 
+DNSMessage_header_t
+DNSMessage_header_t::parse_header( char* buffer ) {
+   uint16_t id = *buffer;
+   id = id << 8;
+   id = id | *( buffer + 1 );
+   buffer += sizeof( id );
+
+   uint16_t codes = *buffer;
+   codes = codes << 8;
+   codes = codes | *( buffer + 1 );
+   buffer += CODES_SIZE;
+
+   uint16_t qdcount = *buffer;
+   qdcount = qdcount << 8;
+   qdcount = qdcount | *( buffer + 1 );
+   buffer += sizeof( qdcount );
+
+   uint16_t ancount = *buffer;
+   ancount = ancount << 8;
+   ancount = ancount | *( buffer + 1 );
+   buffer += sizeof( ancount );
+
+
+   uint16_t nscount = *buffer;
+   nscount = nscount << 8;
+   nscount = nscount | *( buffer + 1 );
+   buffer += sizeof( nscount );
+
+   uint16_t arcount = *buffer;
+   arcount = arcount << 8;
+   arcount = arcount | *( buffer + 1 );
+   buffer += sizeof( arcount );
+
+   DNSMessage_header_t header( id );
+
+   header.QR     = ( codes & ( 0b1 << 15 ) ) >> 15;
+   header.OPCODE = ( codes & ( 0b1111 << 11 ) ) >> 11;
+   header.AA     = ( codes & ( 0b1 << 10 ) ) >> 10;
+   header.TC     = ( codes & ( 0b1 << 9 ) ) >> 9;
+   header.RD     = ( codes & ( 0b1 << 8 ) ) >> 8;
+   header.RA     = ( codes & ( 0b1 << 7 ) ) >> 7;
+   header.Z      = ( codes & ( 0b111 << 4 ) ) >> 4;
+   header.RCODE  = codes & ( 0b1111 );
+
+   header.QDCOUNT = qdcount;
+   header.ANCOUNT = ancount;
+   header.NSCOUNT = nscount;
+   header.ARCOUNT = arcount;
+
+   return header;
+}
+
 // It is assumed domain names passed to the function have 
 // the following format:
 // "<nth-level domain>...<third-level domain>.<second-level domain>.<top-level domain>"
@@ -72,16 +124,6 @@ DNSMessage_question_t::encode_domain_name() {
 
 std::string
 DNSMessage_question_t::serialize() {
-   // Question
-   /*
-   memcpy( DNS_query + pos, question.QNAME.c_str(), question.QNAME.size() );
-   pos += question.QNAME.size();
-   memcpy( DNS_query + pos, &question.QTYPE, sizeof( question.QTYPE ) );
-   pos += sizeof( question.QTYPE );
-   memcpy( DNS_query + pos, &question.QCLASS, sizeof( question.QCLASS ) );
-   pos += sizeof( question.QCLASS );
-   */
-
   std::string question_bytes;
   question_bytes += encode_domain_name();
 
@@ -92,6 +134,80 @@ DNSMessage_question_t::serialize() {
   question_bytes += (char) QCLASS;
 
   return question_bytes;
+}
+
+std::tuple<DNSMessage_question_t, ssize_t>
+DNSMessage_question_t::parse_question( char* buffer, ssize_t question_offset ) {
+   char* buffer_cpy = buffer;
+   buffer_cpy += question_offset;
+   uint8_t label_size;
+
+   ssize_t bytes_read = 0;
+   ssize_t compressed_bytes_read = 0;
+
+   DNSMessage_question_t question;
+
+   /* QNAME */
+   std::string QNAME;
+   for ( ; ; ) {
+      label_size = *buffer_cpy;
+      buffer_cpy += 1;
+      bytes_read += 1;
+
+      if ( label_size == (char)0 ) {
+         break;
+      }
+
+      if ( ( label_size >> 6 ) == 3 ) { // Handle compression
+         uint16_t new_offset = ( label_size << 2 ) >> 2;
+         new_offset = new_offset << 8;
+         new_offset = new_offset | *buffer_cpy;
+
+         buffer_cpy = buffer + new_offset;
+         bytes_read += 1;
+         compressed_bytes_read = bytes_read;
+      } else if ( label_size <= 63 ) {
+         QNAME += label_size;
+         for ( int i=0; i<label_size; ++i ) {
+            QNAME += *buffer_cpy;
+            buffer_cpy += 1;
+            bytes_read += 1;
+         }
+      } else {
+         // TODO: notify the caller of a malformed question
+         cout << "Malformed question" << endl;
+         break;
+      }
+   }
+   if ( compressed_bytes_read != 0 ) {
+      bytes_read = compressed_bytes_read;
+   }
+
+   /* QTYPE */
+   buffer_cpy = buffer + question_offset + bytes_read;
+   uint16_t QTYPE = *buffer_cpy;
+   buffer_cpy += 1;
+   bytes_read += 1;
+
+   QTYPE = QTYPE << 8;
+   QTYPE = QTYPE | *buffer_cpy;
+   buffer_cpy += 1;
+   bytes_read += 1;
+
+   /* QCLASS */
+   uint16_t QCLASS = *buffer_cpy;
+   buffer_cpy += 1;
+   bytes_read += 1;
+
+   QCLASS = QCLASS << 8;
+   QCLASS = QCLASS | *buffer_cpy;
+   bytes_read += 1;
+
+   question.set_QNAME( QNAME );
+   question.set_QTYPE( QTYPE );
+   question.set_QCLASS( QCLASS );
+
+   return { question, bytes_read };
 }
 
 std::string

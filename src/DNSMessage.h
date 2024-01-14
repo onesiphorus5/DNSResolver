@@ -4,11 +4,13 @@
 #include <stdint.h>
 #include <string.h>
 #include <string>
+#include <tuple>
 
 // Header format
 // https://datatracker.ietf.org/doc/html/rfc1035#section-4.1.1
 struct DNSMessage_header_t {
-private:
+// TODO: change this to private
+public:
    uint16_t ID;
 
    // the codes
@@ -20,7 +22,7 @@ private:
    unsigned RA :    1;
    unsigned Z  :    3;
    unsigned RCODE:  4;
-   const ssize_t CODES_SIZE = 2;
+   static const ssize_t CODES_SIZE = 2;
 
    uint16_t QDCOUNT;
    uint16_t ANCOUNT;
@@ -67,10 +69,13 @@ public:
    }
 
    std::string serialize();
+   static DNSMessage_header_t parse_header( char* );
 };
 
 struct DNSMessage_question_t {
-private:
+// private:
+// TODO change to private after testing
+public:
    std::string domain_name;
    std::string QNAME;
    uint16_t    QTYPE;
@@ -79,10 +84,15 @@ private:
    std::string encode_domain_name();
 
 public:
-   DNSMessage_question_t( std::string d_name ) : domain_name{d_name} {
+   DNSMessage_question_t() : 
+      domain_name{}, QNAME{}, QTYPE{0}, QCLASS{0} {};
+
+   DNSMessage_question_t( std::string d_name ) : 
+      domain_name{d_name}, QTYPE{0}, QCLASS{0} {
       QNAME = encode_domain_name();
    }
 
+   void set_QNAME( std::string qname ) { QNAME = qname; }
    void set_QTYPE( uint16_t qtype ) { QTYPE = qtype; }
    void set_QCLASS( uint16_t qclass ) { QCLASS = qclass; }
 
@@ -93,10 +103,19 @@ public:
    }
 
    std::string serialize();
+   static std::tuple<DNSMessage_question_t, ssize_t> parse_question( char*, ssize_t );
 };
 
 struct DNSMessage_rr_t { // rr : resource record
+private:
+   std::string NAME;
+   uint16_t TYPE;
+   uint16_t CLASS;
+   uint32_t TTL;
+   uint16_t RDLENGTH;
+   std::string RDATA;
 
+public:
    std::string serialize();
 };
 
