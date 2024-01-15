@@ -137,8 +137,9 @@ DNSMessage_question_t::serialize() {
 }
 
 std::tuple<DNSMessage_question_t, ssize_t>
-DNSMessage_question_t::parse_question( char* buffer, ssize_t question_offset ) {
-   char* buffer_cpy = buffer;
+DNSMessage_question_t::parse_question( const char* buffer, ssize_t question_offset ) {
+   cout << "question offset: " << question_offset << endl;
+   const char* buffer_cpy = buffer;
    buffer_cpy += question_offset;
    uint8_t label_size;
 
@@ -210,7 +211,90 @@ DNSMessage_question_t::parse_question( char* buffer, ssize_t question_offset ) {
    return { question, bytes_read };
 }
 
-std::string
-DNSMessage_rr_t::serialize() {
-   return "";
+std::tuple<DNSMessage_rr_t, ssize_t>
+DNSMessage_rr_t::parse_resource_record( const char* buffer, ssize_t record_offset ) {
+   const char* buffer_cpy = buffer;
+   buffer_cpy += record_offset;
+   uint8_t label_size;
+
+   ssize_t bytes_read = 0;
+   ssize_t compressed_bytes_read = 0;
+
+   DNSMessage_rr_t record;
+
+   /* NAME */
+   std::string NAME;
+   for ( ; ; ) {
+      label_size = *buffer_cpy;
+      buffer_cpy += 1;
+      bytes_read += 1;
+
+      if ( label_size == (char)0 ) {
+         break;
+      }
+
+      if ( ( label_size >> 6 ) == 3 ) { // Handle compression
+         label_size = label_size << 2;
+         uint16_t new_offset = label_size >> 2;
+         new_offset = new_offset << 8;
+         new_offset = new_offset | *buffer_cpy;
+
+         buffer_cpy = buffer + new_offset;
+         bytes_read += 1;
+         compressed_bytes_read = bytes_read;
+         // TODO: add assert( compressed_bytes_read == 2 )
+      } else if ( label_size <= 63 ) {
+         NAME += label_size;
+         for ( int i=0; i<label_size; ++i ) {
+            NAME += *buffer_cpy;
+            buffer_cpy += 1;
+            bytes_read += 1;
+         }
+      } else {
+         // TODO: notify the caller of a malformed question
+         cout << "Malformed question" << endl;
+         break;
+      }
+   }
+   if ( compressed_bytes_read != 0 ) {
+      bytes_read = compressed_bytes_read;
+   }
+
+   buffer_cpy = buffer + record_offset + bytes_read;
+
+   /* TYPE */
+   uint16_t TYPE = ntohs( *(uint16_t*)buffer_cpy );
+   buffer_cpy += sizeof( TYPE );
+   bytes_read += sizeof( TYPE );
+
+   /* CLASS */
+   uint16_t CLASS = ntohs( *(uint16_t*)buffer_cpy );
+   buffer_cpy += sizeof( CLASS );
+   bytes_read += sizeof( CLASS );
+
+   /* TTL */
+   uint32_t TTL = ntohl( *(uint32_t*)buffer_cpy );
+   buffer_cpy += sizeof( TTL );
+   bytes_read += sizeof( TTL );
+
+   /* RDLENGTH */
+   uint16_t RDLENGTH = ntohs( *(uint16_t*)buffer_cpy );
+   buffer_cpy += sizeof( RDLENGTH );
+   bytes_read += sizeof( RDLENGTH );
+
+   /* RDATA */
+   std::string RDATA;
+   for ( uint16_t i=0; i<RDLENGTH; ++i ) {
+      RDATA += *( buffer_cpy + i );
+   }
+   bytes_read += RDLENGTH;
+
+   record.set_NAME( NAME );
+   record.set_TYPE( TYPE );
+   record.set_CLASS( CLASS );
+   record.set_TTL( TTL );
+   record.set_RDLENGTH( RDLENGTH );
+   record.set_RDATA( RDATA );
+
+   return { record, bytes_read };
 }

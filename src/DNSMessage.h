@@ -10,7 +10,7 @@
 // https://datatracker.ietf.org/doc/html/rfc1035#section-4.1.1
 struct DNSMessage_header_t {
 // TODO: change this to private
-public:
+private:
    uint16_t ID;
 
    // the codes
@@ -45,19 +45,34 @@ public:
       NSCOUNT{ 0 },
       ARCOUNT{ 0 } {}
 
-   void set_QR( uint8_t qr )  { QR = qr; }
-   void set_OPCODE( uint8_t opcode )  { OPCODE = opcode; }
-   void set_AA( uint8_t aa )  { AA = aa; }
-   void set_TC( uint8_t tc ) { TC = tc; }
-   void set_RD( uint8_t rd ) { RD = rd; }
-   void set_RA( uint8_t ra ) { RA = ra; }
-   void set_Z( uint8_t z ) { Z = z; }
-   void set_RCODE( uint8_t rcode ) { RCODE = rcode; }
+   void set_QR( uint8_t qr )         { QR = qr; }
+   void set_OPCODE( uint8_t opcode ) { OPCODE = opcode; }
+   void set_AA( uint8_t aa )         { AA = aa; }
+   void set_TC( uint8_t tc )         { TC = tc; }
+   void set_RD( uint8_t rd )         { RD = rd; }
+   void set_RA( uint8_t ra )         { RA = ra; }
+   void set_Z( uint8_t z )           { Z = z; }
+   void set_RCODE( uint8_t rcode )   { RCODE = rcode; }
 
    void set_QDCOUNT( uint16_t qdcount ) { QDCOUNT = qdcount; }
    void set_ANCOUNT( uint16_t ancount ) { ANCOUNT = ancount; }
    void set_NSCOUNT( uint16_t nscount ) { NSCOUNT = nscount; }
    void set_ARCOUNT( uint16_t arcount ) { ARCOUNT = arcount; }
+
+   uint8_t get_QR()     { return QR; }
+   uint8_t get_OPCODE() { return OPCODE; }
+   uint8_t get_AA()     { return AA; }
+   uint8_t get_TC()     { return TC; }
+   uint8_t get_RD()     { return RD; }
+   uint8_t get_RA()     { return RA; }
+   uint8_t get_Z()      { return Z; }
+   uint8_t get_RCODE()  { return RCODE; }
+
+   uint16_t get_QDCOUNT() { return QDCOUNT; }
+   uint16_t get_ANCOUNT() { return ANCOUNT; }
+   uint16_t get_NSCOUNT() { return NSCOUNT; }
+   uint16_t get_ARCOUNT() { return ARCOUNT; }
+
 
    size_t size() { 
      return sizeof( ID )      + 
@@ -73,9 +88,7 @@ public:
 };
 
 struct DNSMessage_question_t {
-// private:
-// TODO change to private after testing
-public:
+private:
    std::string domain_name;
    std::string QNAME;
    uint16_t    QTYPE;
@@ -93,8 +106,13 @@ public:
    }
 
    void set_QNAME( std::string qname ) { QNAME = qname; }
-   void set_QTYPE( uint16_t qtype ) { QTYPE = qtype; }
-   void set_QCLASS( uint16_t qclass ) { QCLASS = qclass; }
+   void set_QTYPE( uint16_t qtype )    { QTYPE = qtype; }
+   void set_QCLASS( uint16_t qclass )  { QCLASS = qclass; }
+
+   std::string get_QNAME() { return QNAME; }
+   uint16_t get_QTYPE()    { return QTYPE; }
+   uint16_t get_QCLASS()   { return QCLASS; }
+
 
    size_t size() {
       return QNAME.size()    + 
@@ -103,7 +121,7 @@ public:
    }
 
    std::string serialize();
-   static std::tuple<DNSMessage_question_t, ssize_t> parse_question( char*, ssize_t );
+   static std::tuple<DNSMessage_question_t, ssize_t> parse_question( const char*, ssize_t );
 };
 
 struct DNSMessage_rr_t { // rr : resource record
@@ -116,8 +134,22 @@ private:
    std::string RDATA;
 
 public:
-   std::string serialize();
-};
+   DNSMessage_rr_t() : NAME{}, TYPE{0}, CLASS{0}, TTL{0}, 
+                       RDLENGTH{0}, RDATA{} {}
 
-std::string encode_domain_name( std::string );
-void send_DNS_query( std::string );
+   void set_NAME( std::string name )      { NAME = name; }
+   void set_TYPE( uint16_t type )         { TYPE = type; }
+   void set_CLASS( uint16_t _class )      { CLASS = _class; }
+   void set_TTL( uint32_t ttl )           { TTL = ttl; }
+   void set_RDLENGTH( uint16_t rdlength ) { RDLENGTH = rdlength; }
+   void set_RDATA( std::string rdata )    { RDATA = rdata; }
+
+   std::string get_NAME()  { return NAME; }
+   uint16_t get_TYPE()     { return TYPE; }
+   uint16_t get_CLASS()    { return CLASS; }
+   uint32_t get_TTL()      { return TTL; }
+   uint16_t get_RDLENGTH() { return RDLENGTH; }
+   std::string get_RDATA() { return RDATA; }
+
+   static std::tuple<DNSMessage_rr_t, ssize_t> parse_resource_record( const char*, ssize_t );
+};

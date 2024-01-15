@@ -88,7 +88,6 @@ handle_DNSResolver_client( int client_socket ) {
       exit( EXIT_FAILURE );
    }
    free( DNS_query );
-   cout << "sent count: " << sent_cnt << endl;
 
    /* Receive DNS response */
    struct sockaddr_in name_server_addr;
@@ -102,7 +101,6 @@ handle_DNSResolver_client( int client_socket ) {
       perror( "recvfrom()");
       exit( EXIT_FAILURE );
    }
-   cout << "received count: " << recvd_cnt << endl;
    for ( ssize_t i=0; i<recvd_cnt; ++i ) {
       printf( "%02hhx", buffer[i] );
    }
@@ -112,7 +110,7 @@ handle_DNSResolver_client( int client_socket ) {
                         DNSMessage_header_t::parse_header( buffer );
    ssize_t offset = response_header.size();
 
-   uint16_t question_count = response_header.QDCOUNT;
+   uint16_t question_count = response_header.get_QDCOUNT();
    std::vector<DNSMessage_question_t> questions;
    for ( int i=0; i<question_count; ++i ) {
       auto[ r_question, bytes_parsed ] = \
@@ -121,8 +119,7 @@ handle_DNSResolver_client( int client_socket ) {
       offset += bytes_parsed;
    }
 
-   /*
-   uint16_t answer_count = response_header.ANCOUNT;
+   uint16_t answer_count = response_header.get_ANCOUNT();
    std::vector<DNSMessage_rr_t> answers;
    for ( int i=0; i<answer_count; ++i ) {
       auto[ answer, bytes_parsed ] = \
@@ -130,7 +127,6 @@ handle_DNSResolver_client( int client_socket ) {
       answers.push_back( answer );
       offset += bytes_parsed;
    }
-   */
 
    free( buffer );
 }
