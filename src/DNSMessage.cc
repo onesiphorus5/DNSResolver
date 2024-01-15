@@ -41,36 +41,29 @@ DNSMessage_header_t::serialize() {
 }
 
 DNSMessage_header_t
-DNSMessage_header_t::parse_header( char* buffer ) {
-   uint16_t id = *buffer;
-   id = id << 8;
-   id = id | *( buffer + 1 );
+DNSMessage_header_t::parse_header( const char* buffer ) {
+   /* ID */
+   uint16_t id = ntohs( *(uint16_t*)buffer );
    buffer += sizeof( id );
 
-   uint16_t codes = *buffer;
-   codes = codes << 8;
-   codes = codes | *( buffer + 1 );
+   /* codes */
+   uint16_t codes = ntohs( *(uint16_t*)buffer );
    buffer += CODES_SIZE;
 
-   uint16_t qdcount = *buffer;
-   qdcount = qdcount << 8;
-   qdcount = qdcount | *( buffer + 1 );
+   /* QDCOUNT */
+   uint16_t qdcount = ntohs( *(uint16_t*)buffer );
    buffer += sizeof( qdcount );
 
-   uint16_t ancount = *buffer;
-   ancount = ancount << 8;
-   ancount = ancount | *( buffer + 1 );
+   /* ANCOUNT */
+   uint16_t ancount = ntohs( *(uint16_t*)buffer );
    buffer += sizeof( ancount );
 
-
-   uint16_t nscount = *buffer;
-   nscount = nscount << 8;
-   nscount = nscount | *( buffer + 1 );
+   /* NSCOUNT */
+   uint16_t nscount = ntohs( *(uint16_t*)buffer );
    buffer += sizeof( nscount );
 
-   uint16_t arcount = *buffer;
-   arcount = arcount << 8;
-   arcount = arcount | *( buffer + 1 );
+   /* ARCOUNT */
+   uint16_t arcount = ntohs( *(uint16_t*)buffer );
    buffer += sizeof( arcount );
 
    DNSMessage_header_t header( id );
@@ -138,7 +131,6 @@ DNSMessage_question_t::serialize() {
 
 std::tuple<DNSMessage_question_t, ssize_t>
 DNSMessage_question_t::parse_question( const char* buffer, ssize_t question_offset ) {
-   cout << "question offset: " << question_offset << endl;
    const char* buffer_cpy = buffer;
    buffer_cpy += question_offset;
    uint8_t label_size;
@@ -186,23 +178,13 @@ DNSMessage_question_t::parse_question( const char* buffer, ssize_t question_offs
 
    /* QTYPE */
    buffer_cpy = buffer + question_offset + bytes_read;
-   uint16_t QTYPE = *buffer_cpy;
-   buffer_cpy += 1;
-   bytes_read += 1;
-
-   QTYPE = QTYPE << 8;
-   QTYPE = QTYPE | *buffer_cpy;
-   buffer_cpy += 1;
-   bytes_read += 1;
+   uint16_t QTYPE = ntohs( *(uint16_t*)buffer_cpy );
+   buffer_cpy += sizeof( QTYPE );
+   bytes_read += sizeof( QTYPE );
 
    /* QCLASS */
-   uint16_t QCLASS = *buffer_cpy;
-   buffer_cpy += 1;
-   bytes_read += 1;
-
-   QCLASS = QCLASS << 8;
-   QCLASS = QCLASS | *buffer_cpy;
-   bytes_read += 1;
+   uint16_t QCLASS = ntohs( *(uint16_t*)buffer_cpy );
+   bytes_read += sizeof( QTYPE );
 
    question.set_QNAME( QNAME );
    question.set_QTYPE( QTYPE );

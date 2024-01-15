@@ -124,6 +124,7 @@ handle_DNSResolver_client( int client_socket ) {
    for ( int i=0; i<answer_count; ++i ) {
       auto[ answer, bytes_parsed ] = \
                   DNSMessage_rr_t::parse_resource_record( buffer, offset );
+      cout << "answer name: " << answer.get_NAME() << endl;
       answers.push_back( answer );
       offset += bytes_parsed;
    }

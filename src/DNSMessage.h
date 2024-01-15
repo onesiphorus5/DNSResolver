@@ -84,7 +84,7 @@ public:
    }
 
    std::string serialize();
-   static DNSMessage_header_t parse_header( char* );
+   static DNSMessage_header_t parse_header( const char* );
 };
 
 struct DNSMessage_question_t {
