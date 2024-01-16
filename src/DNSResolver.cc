@@ -8,6 +8,7 @@ using namespace std;
 #define MAX_DOMAIN_NAME_SIZE 1024
 
 void handle_DNSResolver_client( int, struct sockaddr_un, std::string );
+std::vector<uint32_t> resolve_domain_name( std::string );
 
 int main() {
    int resolver_socket = setup_socket( RESOLVER_SOCK_PATH );
@@ -50,6 +51,37 @@ handle_DNSResolver_client( int resolver_to_client_socket,
    /* TODO: Check if the domain name is in the cache */
    // if domain name is in the cache return the resolved ip
 
+   /* Resolve domain name */
+   std::vector<uint32_t> IP_addrs = resolve_domain_name( domain_name );
+
+   /* Send resolved IP addresses to client */
+   // 1. Send the number of IP addresses
+   uint16_t answer_count = (uint16_t)IP_addrs.size();
+   ssize_t bytes_sent = sendto( resolver_to_client_socket, &answer_count, 
+                                sizeof( answer_count ), MSG_CONFIRM,
+                                (const struct sockaddr*)&client_addr, 
+                                sizeof( struct sockaddr_un) );
+   if ( bytes_sent != sizeof( answer_count ) ) {
+      perror( "write()" );
+      exit( EXIT_FAILURE );
+   }
+   // 2. Send the IP addresses
+   for ( ssize_t i=0; i<IP_addrs.size(); ++i ) {
+      uint32_t IP_addr = IP_addrs[i];
+
+      bytes_sent = sendto( resolver_to_client_socket, &IP_addr, 
+                           sizeof( IP_addr ), MSG_CONFIRM,
+                           (const struct sockaddr*)&client_addr, 
+                           sizeof( struct sockaddr_un) );
+      if ( bytes_sent != sizeof( IP_addr ) ) {
+         perror( "write()" );
+         exit( EXIT_FAILURE );
+      }
+   }
+
+}
+
+std::vector<uint32_t> resolve_domain_name( std::string domain_name ) {
    /* Build DNS message */
    // Build DNS message header section
    srand( time(NULL) );
@@ -117,37 +149,16 @@ handle_DNSResolver_client( int resolver_to_client_socket,
    }
 
    uint16_t answer_count = response_header.get_ANCOUNT();
-   std::vector<DNSMessage_rr_t> answers;
+   std::vector<uint32_t> IP_addrs;
    for ( int i=0; i<answer_count; ++i ) {
       auto[ answer, bytes_parsed ] = \
                   DNSMessage_rr_t::parse_resource_record( buffer, offset );
-      answers.push_back( answer );
+      uint32_t IP_addr = *(uint32_t*)answer.get_RDATA().c_str();
+      IP_addrs.push_back( IP_addr );
       offset += bytes_parsed;
    }
 
-   /* Send resolved IP addresses to client */
-   // 1. Send the number of IP addresses
-   ssize_t bytes_sent = sendto( resolver_to_client_socket, &answer_count, 
-                                sizeof( answer_count ), MSG_CONFIRM,
-                                (const struct sockaddr*)&client_addr, 
-                                sizeof( struct sockaddr_un) );
-   if ( bytes_sent != sizeof( answer_count ) ) {
-      perror( "write()" );
-      exit( EXIT_FAILURE );
-   }
-   // 2. Send the IP addresses
-   for ( ssize_t i=0; i<answers.size(); ++i ) {
-      uint32_t IP_addr = *(uint32_t*)(answers[i].get_RDATA().c_str());
-
-      bytes_sent = sendto( resolver_to_client_socket, &IP_addr, 
-                           sizeof( IP_addr ), MSG_CONFIRM,
-                           (const struct sockaddr*)&client_addr, 
-                           sizeof( struct sockaddr_un) );
-      if ( bytes_sent != sizeof( IP_addr ) ) {
-         perror( "write()" );
-         exit( EXIT_FAILURE );
-      }
-   }
-
    free( buffer );
+
+   return IP_addrs;
 }

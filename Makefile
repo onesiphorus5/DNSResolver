@@ -23,3 +23,6 @@ tests: tests.cc libDNSResolver.so
 
 run_tests: tests
 	LD_LIBRARY_PATH=$(lib_path) ./tests
+
+clean:
+	rm -rf resolver client tests
