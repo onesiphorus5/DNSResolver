@@ -2,6 +2,7 @@
 #include <arpa/inet.h>
 #include <stdlib.h>
 #include <string>
+#include <algorithm>
 #include "DNSMessage.h"
 
 #include <iostream>
@@ -279,4 +280,21 @@ DNSMessage_rr_t::parse_resource_record( const char* buffer, ssize_t record_offse
    record.set_RDATA( RDATA );
 
    return { record, bytes_read };
+}
+
+std::string
+DNSMessage_rr_t::hl_to_IPAddr( uint32_t ip_integer ) {
+   std::string IPAddr;
+   ssize_t i=0;
+   for ( ; i<sizeof( ip_integer ) - 1; ++i ) {
+      IPAddr += std::to_string( (char) ip_integer );
+      IPAddr +=  ".";
+
+      ip_integer = ip_integer >> 8;
+   }
+   IPAddr += std::to_string( (char) ip_integer );
+  
+   std::reverse( IPAddr.begin(), IPAddr.end() );
+
+   return IPAddr;
 }

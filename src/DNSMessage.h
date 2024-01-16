@@ -5,6 +5,9 @@
 #include <string.h>
 #include <string>
 #include <tuple>
+#include <vector>
+
+#include <iostream>
 
 // Header format
 // https://datatracker.ietf.org/doc/html/rfc1035#section-4.1.1
@@ -152,4 +155,5 @@ public:
    std::string get_RDATA() { return RDATA; }
 
    static std::tuple<DNSMessage_rr_t, ssize_t> parse_resource_record( const char*, ssize_t );
+   static std::string hl_to_IPAddr( uint32_t );
 };

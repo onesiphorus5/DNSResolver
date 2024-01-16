@@ -1,43 +1,48 @@
 #include "connection.h"
 
+#include <iostream>
+using namespace std;
+
+struct sockaddr_un
+unixDomain_addr( const char* socket_path, bool remove_path ) {
+   int domain = AF_UNIX;
+
+   struct sockaddr_un addr;
+   if ( remove_path ) {
+      if ( remove( socket_path ) == -1 && errno != ENOENT ) {
+         perror( "remove() failed" );
+         exit( EXIT_FAILURE );
+      }
+   }
+   memset( &addr, 0, sizeof( struct sockaddr_un ) );
+   addr.sun_family = domain;
+   strncpy( addr.sun_path, socket_path, sizeof( addr.sun_path ) - 1 );
+
+   return addr;
+}
+
 int 
-setup_server() {
+setup_socket( const char* socket_path ) {
    int domain   = AF_UNIX;
-   int type = SOCK_STREAM;
+   int type = SOCK_DGRAM;
    int protocol = 0;
 
-   // Create server side socket
-   int server_socket;
-   if ( ( server_socket = socket( domain, type, protocol ) ) < 0 ) {
+   /* Create socket */
+   int unix_socket;
+   if ( ( unix_socket = socket( domain, type, protocol ) ) < 0 ) {
       perror( "socket() failed" );
       exit( EXIT_FAILURE );
    }
 
-   // Bind the server socket to the server addr and port
-   struct sockaddr_un server_addr;
-
-   if ( remove(SOCK_PATH) == -1 && errno != ENOENT ) {
-      perror( "remove() failed" );
-      exit( EXIT_FAILURE );
-   }
-   memset( &server_addr, 0, sizeof( struct sockaddr_un ) );
-   server_addr.sun_family = domain;
-   strncpy( server_addr.sun_path, SOCK_PATH, sizeof( server_addr.sun_path ) - 1 );
-
-   if ( bind( server_socket, (struct sockaddr *) &server_addr, 
-              sizeof( sockaddr_un ) ) < 0 ) {
+   /* Bind socket */
+   struct sockaddr_un resolver_addr = unixDomain_addr( socket_path, true );
+   if ( bind( unix_socket, (struct sockaddr *) &resolver_addr, 
+              sizeof( struct sockaddr_un ) ) < 0 ) {
       perror( "bind() failed" );
       exit( EXIT_FAILURE );
    }
 
-   // Mark the server socket as the listening side
-   int backlog = 10;
-   if ( listen( server_socket, backlog ) < 0 ) {
-      perror( "listen() failed" );
-      exit( EXIT_FAILURE );
-   }
-
-   return server_socket;
+   return unix_socket;
 }
 
 std::tuple<int, struct addrinfo> 

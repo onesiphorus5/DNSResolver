@@ -14,9 +14,11 @@
 #include <iostream>
 #include <tuple>
 
-char SOCK_PATH[] = "/tmp/DNSResolver";
+char RESOLVER_SOCK_PATH[] = "/tmp/DNSResolver";
+char CLIENT_SOCK_PATH[] = "/tmp/DNSClient";
 const char* name_server_ip   = "8.8.8.8";
 const char* name_server_port = "53";
 
-int setup_server();
+struct sockaddr_un unixDomain_addr( const char*, bool remove_path );
+int setup_socket( const char* );
 std::tuple<int, struct addrinfo> create_socket_for_nameServer( bool use_udp = true );

@@ -1,4 +1,7 @@
+#include <vector>
+#include <unistd.h>
 #include "connection.h"
+#include "DNSMessage.h"
 
 int main(int argc, const char *argv[])
 {
@@ -10,31 +13,48 @@ int main(int argc, const char *argv[])
 
    /* Create client socket */
    int client_socket;
-   client_socket = socket(AF_UNIX, SOCK_STREAM, 0); /* Create client socket */
-   if (client_socket == -1) {
-      perror( "socket()" );
-      exit( EXIT_FAILURE );
-   }
-   /* Connect to the server */
-   struct sockaddr_un DNSResolver_addr;
-   memset( &DNSResolver_addr, 0, sizeof(struct sockaddr_un) );
-   DNSResolver_addr.sun_family = AF_UNIX;
-   strncpy( DNSResolver_addr.sun_path, SOCK_PATH, 
-            sizeof( DNSResolver_addr.sun_path ) - 1);
-   if (connect( client_socket, (struct sockaddr *) &DNSResolver_addr,
-                sizeof(struct sockaddr_un) ) == -1 ) {
-      perror( "connect()" );
-      exit( EXIT_FAILURE );
-   }
-   
-   /* Send the domain name to the resolver */
-   if ( write( client_socket, domain_name, strlen( domain_name )+1 ) 
-        != strlen( domain_name )+1 ) {
-      perror( "write()" );
+   client_socket = setup_socket( CLIENT_SOCK_PATH );
+
+   /* Send domain name to the resolver process */
+   sockaddr_un resolver_addr = unixDomain_addr( RESOLVER_SOCK_PATH,
+                                                       false );
+   ssize_t bytes_sent = sendto( client_socket, domain_name, 
+                                strlen(domain_name) + 1, MSG_CONFIRM, 
+                                (struct sockaddr*)&resolver_addr, 
+                                sizeof( struct sockaddr_un ) );
+   if ( bytes_sent == -1 ) {
+      perror( "sendto()" );
       exit( EXIT_FAILURE );
    }
 
-   /* Read the resolved ip address of the domain name from the resolver */
-   
+   /* Receive resolved IP addresses of the domain name */
+   // 1. Receive the number of resolved IP addresses
+   uint16_t IP_count;
+   struct sockaddr_un addr;
+   socklen_t addr_len = sizeof( struct sockaddr_un );
+   ssize_t bytes_recvd = recvfrom( client_socket, &IP_count, sizeof( IP_count ), 
+                                   MSG_WAITALL, 
+                                   (struct sockaddr*)&addr, &addr_len );
+   if ( bytes_recvd == -1 ) {
+      perror( "recvfrom()" );
+      exit( EXIT_FAILURE );
+   }
+   std::cout << "IP count: " << IP_count << std::endl;
+
+   // 2. Receive those IP addresses
+   std::vector<uint32_t> IP_addrs;
+   for ( uint16_t i=0; i<IP_count; ++i ) {
+      uint32_t IP_addr;
+      bytes_recvd = recvfrom( client_socket, &IP_addr, sizeof( IP_addr ), 
+                              MSG_WAITALL, 
+                              (struct sockaddr*)&addr, &addr_len );
+      if ( bytes_recvd == -1 ) {
+         perror( "recvfrom()" );
+         exit( EXIT_FAILURE );
+      }
+      IP_addr = ntohl( IP_addr );
+      std::cout << DNSMessage_rr_t::hl_to_IPAddr( IP_addr ) << std::endl;
+   }
+
    exit(EXIT_SUCCESS);
 }

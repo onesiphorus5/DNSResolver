@@ -7,47 +7,47 @@ using namespace std;
 
 #define MAX_DOMAIN_NAME_SIZE 1024
 
-void handle_DNSResolver_client( int );
+void handle_DNSResolver_client( int, struct sockaddr_un, std::string );
 
 int main() {
-   int resolver_server_socket = setup_server();
-   // Wait for DNS resolver clients to connect
+   int resolver_socket = setup_socket( RESOLVER_SOCK_PATH );
+
+   ssize_t buffer_size = MAX_DOMAIN_NAME_SIZE;
+   char* buffer = (char*) malloc( buffer_size );
+
+
+   // Handle Resolver client requests
+   ssize_t bytes_read;
    for ( ;; ) {
-      int client_socket = accept( resolver_server_socket, NULL, NULL );
-      if ( client_socket < 0 ) {
-         perror( "accept failed" );
+      // int client_socket = accept( resolver_server_socket, NULL, NULL );
+      std::string domain_name;
+
+      struct sockaddr_un client_addr;
+      socklen_t client_addr_len = sizeof( struct sockaddr_un );
+      bytes_read = recvfrom( resolver_socket, buffer, buffer_size, MSG_WAITALL, 
+                             (struct sockaddr*)&client_addr, 
+                             &client_addr_len );
+      if ( bytes_read == -1 ) {
+         perror( "recvfrom()" );
          exit( EXIT_FAILURE );
       }
 
-      handle_DNSResolver_client( client_socket );
-      close( client_socket );
+      domain_name += std::string( buffer );
+      memset( buffer, 0, buffer_size );
+
+      handle_DNSResolver_client( resolver_socket, client_addr, domain_name );
    }
+
+   free( buffer );
 
    return 0;
 }
 
 void 
-handle_DNSResolver_client( int client_socket ) {
-   /* Read 'domain name' from client */
-   std::string domain_name;
-   
-   size_t buffer_size = MAX_DOMAIN_NAME_SIZE;
-   char* buffer = (char*) malloc( buffer_size );
-   ssize_t read_bytes;
-   for ( ; ; ) { 
-      read_bytes = read( client_socket, buffer, buffer_size );
-      if ( read_bytes < 0 ) {
-         perror( "read()" );
-         exit( EXIT_FAILURE );
-      }
-      if ( read_bytes == 0 ) {
-         break;
-      }
-      domain_name += std::string( buffer );
-      memset( buffer, 0, buffer_size );
-   }
-
-   /* Check if the domain name is in the cache */
+handle_DNSResolver_client( int resolver_to_client_socket, 
+                           struct sockaddr_un client_addr, 
+                           std::string domain_name ) {
+   /* TODO: Check if the domain name is in the cache */
    // if domain name is in the cache return the resolved ip
 
    /* Build DNS message */
@@ -74,14 +74,12 @@ handle_DNSResolver_client( int client_socket ) {
            message_header.size() );
    pos += message_header.size();
    memcpy( DNS_query + pos, question.serialize().c_str(), question.size() );
-   for ( ssize_t i=0; i<DNS_query_size; ++i ) {
-      printf("%02hhx", DNS_query[i] );
-   }
-   cout << endl;
 
-   auto[ resolver_socket, server_addr ] = create_socket_for_nameServer();
+   auto[ resolver_to_nameServer_socket, server_addr ] = \
+                                             create_socket_for_nameServer();
    ssize_t sent_cnt;
-   sent_cnt = sendto( resolver_socket, DNS_query, DNS_query_size, MSG_CONFIRM,
+   sent_cnt = sendto( resolver_to_nameServer_socket, DNS_query, DNS_query_size, 
+                      MSG_CONFIRM,
                       server_addr.ai_addr, server_addr.ai_addrlen );
    if ( sent_cnt == -1 ) {
       perror( "sendto()" );
@@ -89,22 +87,21 @@ handle_DNSResolver_client( int client_socket ) {
    }
    free( DNS_query );
 
+   ssize_t buffer_size = MAX_DOMAIN_NAME_SIZE;
+   char* buffer = (char*) malloc( buffer_size );
+
    /* Receive DNS response */
    struct sockaddr_in name_server_addr;
    socklen_t addrlen = sizeof( name_server_addr );
    memset( buffer, 0, buffer_size );
-   ssize_t recvd_cnt = recvfrom( resolver_socket, (char *)buffer, buffer_size, 
-                                 MSG_WAITALL, 
+   ssize_t recvd_cnt = recvfrom( resolver_to_nameServer_socket, (char *)buffer, 
+                                 buffer_size, MSG_WAITALL, 
                                  (struct sockaddr *)&name_server_addr, 
                                  &addrlen );
    if ( recvd_cnt == -1 ) {
       perror( "recvfrom()");
       exit( EXIT_FAILURE );
    }
-   for ( ssize_t i=0; i<recvd_cnt; ++i ) {
-      printf( "%02hhx", buffer[i] );
-   }
-   cout << endl;
 
    DNSMessage_header_t response_header = \
                         DNSMessage_header_t::parse_header( buffer );
@@ -124,9 +121,32 @@ handle_DNSResolver_client( int client_socket ) {
    for ( int i=0; i<answer_count; ++i ) {
       auto[ answer, bytes_parsed ] = \
                   DNSMessage_rr_t::parse_resource_record( buffer, offset );
-      cout << "answer name: " << answer.get_NAME() << endl;
       answers.push_back( answer );
       offset += bytes_parsed;
+   }
+
+   /* Send resolved IP addresses to client */
+   // 1. Send the number of IP addresses
+   ssize_t bytes_sent = sendto( resolver_to_client_socket, &answer_count, 
+                                sizeof( answer_count ), MSG_CONFIRM,
+                                (const struct sockaddr*)&client_addr, 
+                                sizeof( struct sockaddr_un) );
+   if ( bytes_sent != sizeof( answer_count ) ) {
+      perror( "write()" );
+      exit( EXIT_FAILURE );
+   }
+   // 2. Send the IP addresses
+   for ( ssize_t i=0; i<answers.size(); ++i ) {
+      uint32_t IP_addr = *(uint32_t*)(answers[i].get_RDATA().c_str());
+
+      bytes_sent = sendto( resolver_to_client_socket, &IP_addr, 
+                           sizeof( IP_addr ), MSG_CONFIRM,
+                           (const struct sockaddr*)&client_addr, 
+                           sizeof( struct sockaddr_un) );
+      if ( bytes_sent != sizeof( IP_addr ) ) {
+         perror( "write()" );
+         exit( EXIT_FAILURE );
+      }
    }
 
    free( buffer );
