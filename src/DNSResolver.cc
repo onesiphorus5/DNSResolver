@@ -181,6 +181,7 @@ recursive_resolve( std::string domain_name ) {
 
       ssize_t offset = 0;
       auto[reply_buffer, reply_buffer_size] = dns_request( addr, domain_name );
+      cout << "reply_buffer size: " << reply_buffer_size << endl;
 
       // Header section
       reply_header = DNSMessage_header_t::parse_header( reply_buffer );
@@ -219,20 +220,18 @@ recursive_resolve( std::string domain_name ) {
          // TODO: handle RDATA compression
          auto[ authority_record, bytes_parsed ] = \
                DNSMessage_rr_t::parse_resource_record( reply_buffer, offset );
-         cout << "Auth r name: " << authority_record.get_NAME() << endl;
-         cout << "Auth r offset: " << offset << endl;
          authority_records.push_back( authority_record );
          offset += bytes_parsed;
       }
 
       // Additional records section
       uint16_t additional_rr_count = reply_header.get_ARCOUNT();
+      cout << "additional r count: " << additional_rr_count << endl;
       for ( int i=0; i<additional_rr_count; ++i ) {
+         cout << "i: " << i << endl;
          auto[ additional_record, bytes_parsed ] = \
                DNSMessage_rr_t::parse_resource_record( reply_buffer, offset );
 
-         cout << "Add r name: " << additional_record.get_NAME() << endl;
-         cout << "Add r offset: " << offset << endl;
          additional_records[ additional_record.get_NAME() ] = additional_record;
          offset += bytes_parsed;
       }

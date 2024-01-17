@@ -211,6 +211,7 @@ DNSMessage_rr_t::parse_resource_record( const char* buffer, ssize_t record_offse
    // TODO: the code handling compression has a bug, when double compression 
    //       is encountered.
    std::string NAME;
+   cout << "record_offset: " << record_offset << endl;
    for ( ; ; ) {
       label_size = *buffer_cpy;
       buffer_cpy += 1;
@@ -220,17 +221,24 @@ DNSMessage_rr_t::parse_resource_record( const char* buffer, ssize_t record_offse
          break;
       }
 
+      cout << "label size: " << (int)label_size << endl;
       if ( ( label_size >> 6 ) == 3 ) { // Handle compression
-         cout << "Handling compression" << endl;
          label_size = label_size << 2;
          uint16_t new_offset = label_size >> 2;
+         cout << "new offset: " << new_offset << endl;
          new_offset = new_offset << 8;
-         new_offset = new_offset | *buffer_cpy;
+         printf( "the char: %02hhX\n", (char)*buffer_cpy );
+         // cout << "new offset: " << (char)*buffer_cpy << endl;
+         uint16_t the_char = (uint16_t)*buffer_cpy;
+         the_char = the_char << 8;
+         the_char = the_char >> 8;
+         // new_offset = new_offset | (uint16_t)*buffer_cpy;
+         new_offset = new_offset | the_char;
+         cout << "new offset: " << new_offset << endl;
 
-         cout << "compression offset: " << new_offset << endl;
          buffer_cpy = buffer + new_offset;
          bytes_read += 1;
-         compressed_bytes_read = bytes_read;
+         compressed_bytes_read = bytes_read = sizeof( new_offset );
          // TODO: add assert( compressed_bytes_read == 2 )
       } else if ( label_size <= 63 ) {
          NAME += label_size;
