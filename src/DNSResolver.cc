@@ -167,8 +167,6 @@ recursive_resolve( std::string domain_name ) {
    std::stack<std::string> nameServer_addrs;
    nameServer_addrs.push( root_server_ip );
 
-   // char* reply_buffer = (char*) malloc( MAX_DNS_RESPONSE_SIZE );
-
    DNSMessage_header_t reply_header;
    std::vector<DNSMessage_question_t> questions;
    std::vector<DNSMessage_rr_t> answers;
@@ -181,7 +179,6 @@ recursive_resolve( std::string domain_name ) {
       std::string addr = nameServer_addrs.top();
       nameServer_addrs.pop();
 
-      // memset( reply_buffer, 0, MAX_DNS_RESPONSE_SIZE );
       ssize_t offset = 0;
       auto[reply_buffer, reply_buffer_size] = dns_request( addr, domain_name );
 
@@ -219,11 +216,11 @@ recursive_resolve( std::string domain_name ) {
       // Authority records section
       uint16_t authority_ns_count = reply_header.get_NSCOUNT();
       for ( int i=0; i<authority_ns_count; ++i ) {
+         // TODO: handle RDATA compression
          auto[ authority_record, bytes_parsed ] = \
                DNSMessage_rr_t::parse_resource_record( reply_buffer, offset );
-
-         cout << "Authority name: " << authority_record.get_NAME() << endl;
-         cout << "Authority data: " << authority_record.get_RDATA() << endl;
+         cout << "Auth r name: " << authority_record.get_NAME() << endl;
+         cout << "Auth r offset: " << offset << endl;
          authority_records.push_back( authority_record );
          offset += bytes_parsed;
       }
@@ -234,8 +231,8 @@ recursive_resolve( std::string domain_name ) {
          auto[ additional_record, bytes_parsed ] = \
                DNSMessage_rr_t::parse_resource_record( reply_buffer, offset );
 
-         cout << "Additional r name: " << additional_record.get_NAME() << endl;
-         cout << "Additional r data: " << additional_record.get_RDATA().size() << endl;
+         cout << "Add r name: " << additional_record.get_NAME() << endl;
+         cout << "Add r offset: " << offset << endl;
          additional_records[ additional_record.get_NAME() ] = additional_record;
          offset += bytes_parsed;
       }

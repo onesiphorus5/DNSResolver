@@ -154,7 +154,8 @@ DNSMessage_question_t::parse_question( const char* buffer, ssize_t question_offs
       }
 
       if ( ( label_size >> 6 ) == 3 ) { // Handle compression
-         uint16_t new_offset = ( label_size << 2 ) >> 2;
+         uint16_t new_offset = label_size << 2;
+         new_offset = label_size >> 2;
          new_offset = new_offset << 8;
          new_offset = new_offset | *buffer_cpy;
 
@@ -207,6 +208,8 @@ DNSMessage_rr_t::parse_resource_record( const char* buffer, ssize_t record_offse
    DNSMessage_rr_t record;
 
    /* NAME */
+   // TODO: the code handling compression has a bug, when double compression 
+   //       is encountered.
    std::string NAME;
    for ( ; ; ) {
       label_size = *buffer_cpy;
@@ -218,11 +221,13 @@ DNSMessage_rr_t::parse_resource_record( const char* buffer, ssize_t record_offse
       }
 
       if ( ( label_size >> 6 ) == 3 ) { // Handle compression
+         cout << "Handling compression" << endl;
          label_size = label_size << 2;
          uint16_t new_offset = label_size >> 2;
          new_offset = new_offset << 8;
          new_offset = new_offset | *buffer_cpy;
 
+         cout << "compression offset: " << new_offset << endl;
          buffer_cpy = buffer + new_offset;
          bytes_read += 1;
          compressed_bytes_read = bytes_read;
