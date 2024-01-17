@@ -67,8 +67,9 @@ DNSMessage_header_t::parse_header( const char* buffer ) {
    uint16_t arcount = ntohs( *(uint16_t*)buffer );
    buffer += sizeof( arcount );
 
-   DNSMessage_header_t header( id );
-
+   DNSMessage_header_t header;
+   
+   header.ID     =  id;
    header.QR     = ( codes & ( 0b1 << 15 ) ) >> 15;
    header.OPCODE = ( codes & ( 0b1111 << 11 ) ) >> 11;
    header.AA     = ( codes & ( 0b1 << 10 ) ) >> 10;
@@ -235,7 +236,7 @@ DNSMessage_rr_t::parse_resource_record( const char* buffer, ssize_t record_offse
          }
       } else {
          // TODO: notify the caller of a malformed question
-         cout << "Malformed question" << endl;
+         cout << "Malformed question2" << endl;
          break;
       }
    }
@@ -284,6 +285,7 @@ DNSMessage_rr_t::parse_resource_record( const char* buffer, ssize_t record_offse
 
 std::string
 DNSMessage_rr_t::hl_to_IPAddr( uint32_t ip_integer ) {
+   ip_integer = ntohl( ip_integer );
    std::string IPAddr;
    ssize_t i=0;
    for ( ; i<sizeof( ip_integer ) - 1; ++i ) {
@@ -294,7 +296,7 @@ DNSMessage_rr_t::hl_to_IPAddr( uint32_t ip_integer ) {
    }
    IPAddr += std::to_string( (char) ip_integer );
   
-   std::reverse( IPAddr.begin(), IPAddr.end() );
+   // std::reverse( IPAddr.begin(), IPAddr.end() );
 
    return IPAddr;
 }

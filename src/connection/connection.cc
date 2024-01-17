@@ -46,8 +46,7 @@ setup_socket( const char* socket_path ) {
 }
 
 std::tuple<int, struct addrinfo> 
-create_socket_for_nameServer( bool use_udp ) {
-   // TODO: handle TCP also
+create_socket_for_nameServer( std::string nameServer_addr ) {
    int resolver_socket;
    struct addrinfo hints, *serverinfo, *iter;
 
@@ -55,8 +54,8 @@ create_socket_for_nameServer( bool use_udp ) {
    hints.ai_family = AF_INET;
    hints.ai_socktype = SOCK_DGRAM; 
 
-   if ( getaddrinfo( name_server_ip, name_server_port, 
-                     &hints, &serverinfo ) != 0 ) {
+   if ( getaddrinfo( nameServer_addr.c_str(), DNS_port, &hints, 
+                     &serverinfo ) != 0 ) {
       perror( "getaddrinfo()" );
       exit( EXIT_FAILURE );
    }

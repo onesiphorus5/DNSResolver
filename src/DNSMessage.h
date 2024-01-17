@@ -33,8 +33,8 @@ private:
    uint16_t ARCOUNT;
 
 public:
-   DNSMessage_header_t( uint16_t id ) : 
-      ID{ id },
+   DNSMessage_header_t() : 
+      ID{ 0 },
       QR{ 0 },
       OPCODE{ 0 },
       AA{ 0 },
@@ -48,6 +48,7 @@ public:
       NSCOUNT{ 0 },
       ARCOUNT{ 0 } {}
 
+   void set_ID( uint16_t id )        { ID = id; }
    void set_QR( uint8_t qr )         { QR = qr; }
    void set_OPCODE( uint8_t opcode ) { OPCODE = opcode; }
    void set_AA( uint8_t aa )         { AA = aa; }
@@ -62,6 +63,7 @@ public:
    void set_NSCOUNT( uint16_t nscount ) { NSCOUNT = nscount; }
    void set_ARCOUNT( uint16_t arcount ) { ARCOUNT = arcount; }
 
+   uint16_t get_ID()    { return ID; }
    uint8_t get_QR()     { return QR; }
    uint8_t get_OPCODE() { return OPCODE; }
    uint8_t get_AA()     { return AA; }
