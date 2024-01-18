@@ -9,11 +9,16 @@
 
 #include <iostream>
 
+// Helper function
+std::tuple<std::string, ssize_t> read_encoded_domain_name( char const*, ssize_t );
+
 // Header format
 // https://datatracker.ietf.org/doc/html/rfc1035#section-4.1.1
 struct DNSMessage_header_t {
-// TODO: change this to private
 private:
+   char const * const message_buffer;
+   ssize_t message_size;
+
    uint16_t ID;
 
    // the codes
@@ -32,8 +37,12 @@ private:
    uint16_t NSCOUNT;
    uint16_t ARCOUNT;
 
+   void parse_header();
+
 public:
-   DNSMessage_header_t() : 
+   DNSMessage_header_t( char const * m_buffer=nullptr, ssize_t m_size=0 ) :
+      message_buffer{ m_buffer },
+      message_size{ m_size }, 
       ID{ 0 },
       QR{ 0 },
       OPCODE{ 0 },
@@ -46,7 +55,13 @@ public:
       QDCOUNT{ 0 },
       ANCOUNT{ 0 },
       NSCOUNT{ 0 },
-      ARCOUNT{ 0 } {}
+      ARCOUNT{ 0 } {
+         if ( m_buffer != nullptr ) {
+            parse_header();
+         }
+      }
+
+   ~DNSMessage_header_t(){ free( (void*)message_buffer ); }
 
    void set_ID( uint16_t id )        { ID = id; }
    void set_QR( uint8_t qr )         { QR = qr; }
@@ -63,7 +78,11 @@ public:
    void set_NSCOUNT( uint16_t nscount ) { NSCOUNT = nscount; }
    void set_ARCOUNT( uint16_t arcount ) { ARCOUNT = arcount; }
 
+   char const* get_message_buffer() { return message_buffer; }
+   ssize_t get_message_size() { return message_size; }
+
    uint16_t get_ID()    { return ID; }
+
    uint8_t get_QR()     { return QR; }
    uint8_t get_OPCODE() { return OPCODE; }
    uint8_t get_AA()     { return AA; }
@@ -89,7 +108,6 @@ public:
    }
 
    std::string serialize();
-   static DNSMessage_header_t parse_header( const char* );
 };
 
 struct DNSMessage_question_t {
@@ -126,7 +144,26 @@ public:
    }
 
    std::string serialize();
-   static std::tuple<DNSMessage_question_t, ssize_t> parse_question( const char*, ssize_t );
+};
+
+class DNSMessage_question {
+private:
+   DNSMessage_header_t* message_header;
+   std::vector<DNSMessage_question_t> questions;
+
+public:
+   DNSMessage_question( DNSMessage_header_t* header ) : 
+      message_header{ header } {}
+   
+   DNSMessage_question_t& get_question( ssize_t index ) {
+      if ( index < 0 || index >= questions.size() ) {
+         exit( EXIT_FAILURE );
+      }
+      return questions[index];
+   }
+
+   ssize_t size() { return questions.size(); }
+   ssize_t parse_questions( ssize_t );
 };
 
 struct DNSMessage_rr_t { // rr : resource record
@@ -139,8 +176,8 @@ private:
    std::string RDATA;
 
 public:
-   DNSMessage_rr_t() : NAME{}, TYPE{0}, CLASS{0}, TTL{0}, 
-                       RDLENGTH{0}, RDATA{} {}
+   DNSMessage_rr_t() : 
+      NAME{}, TYPE{0}, CLASS{0}, TTL{0}, RDLENGTH{0}, RDATA{} {}
 
    void set_NAME( std::string name )      { NAME = name; }
    void set_TYPE( uint16_t type )         { TYPE = type; }
@@ -158,4 +195,30 @@ public:
 
    static std::tuple<DNSMessage_rr_t, ssize_t> parse_resource_record( const char*, ssize_t );
    static std::string hl_to_IPAddr( uint32_t );
+};
+
+enum RecordType {
+   AN, // Answer
+   NS, // Name server
+   AR  // Additional resource
+};
+
+class DNSMessage_rr {
+private:
+   DNSMessage_header_t* message_header;
+   std::vector<DNSMessage_rr_t> r_records;
+
+public:
+   DNSMessage_rr( DNSMessage_header_t* header ) : 
+      message_header{ header } {}
+   
+   DNSMessage_rr_t& get_record( ssize_t index ) {
+      if ( index < 0 || index >= r_records.size() ) {
+         exit( EXIT_FAILURE );
+      }
+      return r_records[index];
+   }
+
+   ssize_t size() { return r_records.size(); }
+   ssize_t parse_records( ssize_t, RecordType );
 };

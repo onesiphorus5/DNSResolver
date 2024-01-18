@@ -167,12 +167,6 @@ recursive_resolve( std::string domain_name ) {
    std::stack<std::string> nameServer_addrs;
    nameServer_addrs.push( root_server_ip );
 
-   DNSMessage_header_t reply_header;
-   std::vector<DNSMessage_question_t> questions;
-   std::vector<DNSMessage_rr_t> answers;
-   std::vector<DNSMessage_rr_t> authority_records;
-   std::unordered_map<std::string, DNSMessage_rr_t> additional_records;
-
    std::vector<uint32_t> resolved_IPs;
 
    while ( !nameServer_addrs.empty() ) {
@@ -181,156 +175,43 @@ recursive_resolve( std::string domain_name ) {
 
       ssize_t offset = 0;
       auto[reply_buffer, reply_buffer_size] = dns_request( addr, domain_name );
-      cout << "reply_buffer size: " << reply_buffer_size << endl;
 
       // Header section
-      reply_header = DNSMessage_header_t::parse_header( reply_buffer );
+      DNSMessage_header_t reply_header( reply_buffer, reply_buffer_size );
       offset += reply_header.size();
 
       // Question section
-      uint16_t question_count = reply_header.get_QDCOUNT();
-      questions.clear();
-      for ( int i=0; i<question_count; ++i ) {
-         auto[ r_question, bytes_parsed ] = \
-               DNSMessage_question_t::parse_question( reply_buffer, offset );
-
-         questions.push_back( r_question );
-         offset += bytes_parsed;
-      }
+      DNSMessage_question questions( &reply_header );
+      ssize_t bytes_read = questions.parse_questions( offset );
+      offset += bytes_read;
 
       // Answer section
-      uint16_t answer_count = reply_header.get_ANCOUNT();
-      answers.clear();
-      for ( int i=0; i<answer_count; ++i ) {
-         auto[ answer, bytes_parsed ] = \
-               DNSMessage_rr_t::parse_resource_record( reply_buffer, offset );
-         // uint32_t IP_addr = *(uint32_t*)answer.get_RDATA().c_str();
-
-         // resolved_IPs.push_back( IP_addr );
-         answers.push_back( answer );
-         offset += bytes_parsed;
-      }
+      DNSMessage_rr answers( &reply_header );
+      bytes_read = answers.parse_records( offset, RecordType::AN );
+      offset += bytes_read;
       if ( answers.size() > 0 ) {
          break;
       }
 
-      // Authority records section
-      uint16_t authority_ns_count = reply_header.get_NSCOUNT();
-      for ( int i=0; i<authority_ns_count; ++i ) {
-         // TODO: handle RDATA compression
-         auto[ authority_record, bytes_parsed ] = \
-               DNSMessage_rr_t::parse_resource_record( reply_buffer, offset );
-         authority_records.push_back( authority_record );
-         offset += bytes_parsed;
-      }
+      // Authoritative name server section
+      DNSMessage_rr ns_records( &reply_header );
+      bytes_read = ns_records.parse_records( offset, RecordType::NS );
+      offset += bytes_read;
 
       // Additional records section
-      uint16_t additional_rr_count = reply_header.get_ARCOUNT();
-      cout << "additional r count: " << additional_rr_count << endl;
-      for ( int i=0; i<additional_rr_count; ++i ) {
-         cout << "i: " << i << endl;
-         auto[ additional_record, bytes_parsed ] = \
-               DNSMessage_rr_t::parse_resource_record( reply_buffer, offset );
+      DNSMessage_rr add_records( &reply_header );
+      bytes_read = add_records.parse_records( offset, RecordType::AR );
+      offset += bytes_read;
 
-         additional_records[ additional_record.get_NAME() ] = additional_record;
-         offset += bytes_parsed;
+      for ( int i=0; i<add_records.size(); ++i ) {
+         auto record = add_records.get_record( i );
+         cout << "record name: " << record.get_NAME() << endl;
+         cout << "record type: " << record.get_TYPE() << endl;
       }
 
-      // Add authority name servers to the stack
-      /*
-      for ( int i=0; i<authority_ns_count; ++i ) {
-         std::string ip_addr_str = 
-                     DNSMessage_rr_t::hl_to_IPAddr( authority_records[i] );
-         nameServer_addrs.push( ip_addr_str );
-         cout << "[resolver] auth addr: " << ip_addr_str << endl;
-      }
-      */
+      // TODO: add name server addrs to the stack
 
-      free( reply_buffer );
    }
 
    return resolved_IPs;
 }
-
-/*
-std::vector<uint32_t> resolve_domain_name( std::string domain_name ) {
-   // Build DNS message header section
-   srand( time(NULL) );
-   DNSMessage_header_t message_header( rand() );
-   // message_header.set_RD( 1 );         // recursion desired
-   message_header.set_QDCOUNT( 1 );    // one question
-
-   // Build DNS message question section
-   DNSMessage_question_t question( domain_name );
-   question.set_QTYPE( 1 );         // host address
-   question.set_QCLASS( 1 );        // Internet
-
-   ssize_t DNS_query_size = message_header.size();
-   DNS_query_size += question.size();
-   char* DNS_query = (char*) malloc( DNS_query_size );
-   memset( DNS_query, 0, DNS_query_size );
-   ssize_t pos = 0;
-
-   memcpy( DNS_query, message_header.serialize().c_str(), 
-           message_header.size() );
-   pos += message_header.size();
-   memcpy( DNS_query + pos, question.serialize().c_str(), question.size() );
-
-   auto[ resolver_to_nameServer_socket, server_addr ] = \
-                                             create_socket_for_nameServer();
-   ssize_t sent_cnt;
-   sent_cnt = sendto( resolver_to_nameServer_socket, DNS_query, DNS_query_size, 
-                      MSG_CONFIRM,
-                      server_addr.ai_addr, server_addr.ai_addrlen );
-   if ( sent_cnt == -1 ) {
-      perror( "sendto()" );
-      exit( EXIT_FAILURE );
-   }
-   free( DNS_query );
-
-   ssize_t buffer_size = MAX_DNS_RESPONSE_SIZE;
-   char* buffer = (char*) malloc( buffer_size );
-
-   struct sockaddr_in name_server_addr;
-   socklen_t addrlen = sizeof( name_server_addr );
-   memset( buffer, 0, buffer_size );
-   ssize_t recvd_cnt = recvfrom( resolver_to_nameServer_socket, (char *)buffer, 
-                                 buffer_size, MSG_WAITALL, 
-                                 (struct sockaddr *)&name_server_addr, 
-                                 &addrlen );
-   if ( recvd_cnt == -1 ) {
-      perror( "recvfrom()");
-      exit( EXIT_FAILURE );
-   }
-
-   DNSMessage_header_t response_header = \
-                        DNSMessage_header_t::parse_header( buffer );
-   ssize_t offset = response_header.size();
-
-   uint16_t question_count = response_header.get_QDCOUNT();
-   std::vector<DNSMessage_question_t> questions;
-   for ( int i=0; i<question_count; ++i ) {
-      auto[ r_question, bytes_parsed ] = \
-                  DNSMessage_question_t::parse_question( buffer, offset );
-      questions.push_back( r_question );
-      offset += bytes_parsed;
-   }
-
-   uint16_t answer_count = response_header.get_ANCOUNT();
-   std::vector<uint32_t> IP_addrs;
-   for ( int i=0; i<answer_count; ++i ) {
-      auto[ answer, bytes_parsed ] = \
-                  DNSMessage_rr_t::parse_resource_record( buffer, offset );
-      uint32_t IP_addr = *(uint32_t*)answer.get_RDATA().c_str();
-      IP_addrs.push_back( IP_addr );
-      offset += bytes_parsed;
-   }
-   cout << "Question count: " << response_header.get_QDCOUNT() << endl;
-   cout << "Answer count: " << response_header.get_ANCOUNT() << endl;
-   cout << "Name server count: " << response_header.get_NSCOUNT() << endl;
-
-   free( buffer );
-
-   return IP_addrs;
-}
-*/

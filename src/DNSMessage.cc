@@ -8,6 +8,68 @@
 #include <iostream>
 using namespace std;
 
+std::tuple<std::string, ssize_t>
+read_encoded_domain_name( char const* message_buffer, 
+                                      ssize_t section_offset ) {
+   std::string NAME;
+
+   char const* buffer_cpy = message_buffer;
+   buffer_cpy += section_offset;
+
+   uint8_t label_size;
+   ssize_t bytes_read = 0;
+   ssize_t compressed_bytes_read = 0;
+   uint16_t domain_name_offset;
+
+   /* NAME */
+   // TODO: the code handling compression has a bug, when double compression 
+   //       is encountered.
+   for ( ; ; ) {
+      label_size = *buffer_cpy;
+      buffer_cpy += 1;
+      bytes_read += 1;
+
+      if ( label_size == (char)0 ) {
+         break;
+      }
+
+      if ( ( label_size >> 6 ) == 3 ) { // Handle compression
+         label_size = label_size << 2;
+         label_size = label_size >> 2;
+
+         uint16_t right_half = label_size;
+         right_half = right_half << 8;
+
+         uint16_t left_half = (uint16_t)*buffer_cpy;
+         bytes_read += 1;
+         left_half = left_half << 8;
+         left_half = left_half >> 8;
+
+         domain_name_offset = right_half | left_half;
+
+         buffer_cpy = message_buffer + domain_name_offset;
+         compressed_bytes_read = bytes_read = sizeof( domain_name_offset );
+         // TODO: add assert( compressed_bytes_read == 2 )
+      } else if ( label_size <= 63 ) {
+         NAME += label_size;
+         for ( int i=0; i<label_size; ++i ) {
+            NAME += *buffer_cpy;
+            buffer_cpy += 1;
+            bytes_read += 1;
+         }
+      } else {
+         // TODO: notify the caller of a malformed question
+         cout << "Malformed question" << endl;
+         break;
+      }
+   }
+   if ( compressed_bytes_read != 0 ) {
+      bytes_read = compressed_bytes_read;
+   }
+
+   return { NAME, bytes_read };
+}
+
 std::string
 DNSMessage_header_t::serialize() {
    std::string header_bytes;
@@ -41,50 +103,42 @@ DNSMessage_header_t::serialize() {
    return header_bytes;
 }
 
-DNSMessage_header_t
-DNSMessage_header_t::parse_header( const char* buffer ) {
+void
+DNSMessage_header_t::parse_header() {
+   char const* buffer = message_buffer;
    /* ID */
-   uint16_t id = ntohs( *(uint16_t*)buffer );
-   buffer += sizeof( id );
+   ID = ntohs( *(uint16_t*)buffer );
+   buffer += sizeof( ID );
 
    /* codes */
    uint16_t codes = ntohs( *(uint16_t*)buffer );
    buffer += CODES_SIZE;
 
    /* QDCOUNT */
-   uint16_t qdcount = ntohs( *(uint16_t*)buffer );
-   buffer += sizeof( qdcount );
+   QDCOUNT = ntohs( *(uint16_t*)buffer );
+   buffer += sizeof( QDCOUNT );
 
    /* ANCOUNT */
-   uint16_t ancount = ntohs( *(uint16_t*)buffer );
-   buffer += sizeof( ancount );
+   ANCOUNT = ntohs( *(uint16_t*)buffer );
+   buffer += sizeof( ANCOUNT );
 
    /* NSCOUNT */
-   uint16_t nscount = ntohs( *(uint16_t*)buffer );
-   buffer += sizeof( nscount );
+   NSCOUNT = ntohs( *(uint16_t*)buffer );
+   buffer += sizeof( NSCOUNT );
 
    /* ARCOUNT */
-   uint16_t arcount = ntohs( *(uint16_t*)buffer );
-   buffer += sizeof( arcount );
+   ARCOUNT = ntohs( *(uint16_t*)buffer );
+   buffer += sizeof( ARCOUNT );
 
-   DNSMessage_header_t header;
-   
-   header.ID     =  id;
-   header.QR     = ( codes & ( 0b1 << 15 ) ) >> 15;
-   header.OPCODE = ( codes & ( 0b1111 << 11 ) ) >> 11;
-   header.AA     = ( codes & ( 0b1 << 10 ) ) >> 10;
-   header.TC     = ( codes & ( 0b1 << 9 ) ) >> 9;
-   header.RD     = ( codes & ( 0b1 << 8 ) ) >> 8;
-   header.RA     = ( codes & ( 0b1 << 7 ) ) >> 7;
-   header.Z      = ( codes & ( 0b111 << 4 ) ) >> 4;
-   header.RCODE  = codes & ( 0b1111 );
-
-   header.QDCOUNT = qdcount;
-   header.ANCOUNT = ancount;
-   header.NSCOUNT = nscount;
-   header.ARCOUNT = arcount;
-
-   return header;
+   // Codes
+   this->QR     = ( codes & ( 0b1 << 15 ) ) >> 15;
+   this->OPCODE = ( codes & ( 0b1111 << 11 ) ) >> 11;
+   this->AA     = ( codes & ( 0b1 << 10 ) ) >> 10;
+   this->TC     = ( codes & ( 0b1 << 9 ) ) >> 9;
+   this->RD     = ( codes & ( 0b1 << 8 ) ) >> 8;
+   this->RA     = ( codes & ( 0b1 << 7 ) ) >> 7;
+   this->Z      = ( codes & ( 0b111 << 4 ) ) >> 4;
+   this->RCODE  = codes & ( 0b1111 );
 }
 
 // It is assumed domain names passed to the function have 
@@ -131,175 +185,51 @@ DNSMessage_question_t::serialize() {
   return question_bytes;
 }
 
-std::tuple<DNSMessage_question_t, ssize_t>
-DNSMessage_question_t::parse_question( const char* buffer, ssize_t question_offset ) {
-   const char* buffer_cpy = buffer;
-   buffer_cpy += question_offset;
-   uint8_t label_size;
+ssize_t
+DNSMessage_question::parse_questions( ssize_t q_section_offset ) {
+   ssize_t offset = q_section_offset;
+   ssize_t total_bytes_read = 0;
 
-   ssize_t bytes_read = 0;
-   ssize_t compressed_bytes_read = 0;
+   questions.clear();
+   ssize_t question_count = message_header->get_QDCOUNT();
+   for ( ssize_t i=0; i<question_count; ++i ) {
+      DNSMessage_question_t question;
 
-   DNSMessage_question_t question;
+      // QNAME
+      auto[ QNAME, bytes_read ] = read_encoded_domain_name( 
+                              message_header->get_message_buffer(), offset );
 
-   /* QNAME */
-   std::string QNAME;
-   for ( ; ; ) {
-      label_size = *buffer_cpy;
-      buffer_cpy += 1;
-      bytes_read += 1;
+      const char* buffer_cpy = message_header->get_message_buffer();
+      buffer_cpy += offset;
+      buffer_cpy += bytes_read;
 
-      if ( label_size == (char)0 ) {
-         break;
-      }
+      /* QTYPE */
+      uint16_t QTYPE = ntohs( *(uint16_t*)buffer_cpy );
+      buffer_cpy += sizeof( QTYPE );
+      bytes_read += sizeof( QTYPE );
 
-      if ( ( label_size >> 6 ) == 3 ) { // Handle compression
-         uint16_t new_offset = label_size << 2;
-         new_offset = label_size >> 2;
-         new_offset = new_offset << 8;
-         new_offset = new_offset | *buffer_cpy;
+      /* QCLASS */
+      uint16_t QCLASS = ntohs( *(uint16_t*)buffer_cpy );
+      buffer_cpy += sizeof( QCLASS );
+      bytes_read += sizeof( QCLASS );
 
-         buffer_cpy = buffer + new_offset;
-         bytes_read += 1;
-         compressed_bytes_read = bytes_read;
-      } else if ( label_size <= 63 ) {
-         QNAME += label_size;
-         for ( int i=0; i<label_size; ++i ) {
-            QNAME += *buffer_cpy;
-            buffer_cpy += 1;
-            bytes_read += 1;
-         }
-      } else {
-         // TODO: notify the caller of a malformed question
-         cout << "Malformed question" << endl;
-         break;
-      }
-   }
-   if ( compressed_bytes_read != 0 ) {
-      bytes_read = compressed_bytes_read;
+      question.set_QNAME( QNAME );
+      question.set_QTYPE( QTYPE );
+      question.set_QCLASS( QCLASS );
+
+      questions.push_back( question );
+      offset += bytes_read;
+      total_bytes_read += bytes_read;
    }
 
-   /* QTYPE */
-   buffer_cpy = buffer + question_offset + bytes_read;
-   uint16_t QTYPE = ntohs( *(uint16_t*)buffer_cpy );
-   buffer_cpy += sizeof( QTYPE );
-   bytes_read += sizeof( QTYPE );
-
-   /* QCLASS */
-   uint16_t QCLASS = ntohs( *(uint16_t*)buffer_cpy );
-   bytes_read += sizeof( QTYPE );
-
-   question.set_QNAME( QNAME );
-   question.set_QTYPE( QTYPE );
-   question.set_QCLASS( QCLASS );
-
-   return { question, bytes_read };
-}
-
-std::tuple<DNSMessage_rr_t, ssize_t>
-DNSMessage_rr_t::parse_resource_record( const char* buffer, ssize_t record_offset ) {
-   const char* buffer_cpy = buffer;
-   buffer_cpy += record_offset;
-   uint8_t label_size;
-
-   ssize_t bytes_read = 0;
-   ssize_t compressed_bytes_read = 0;
-
-   DNSMessage_rr_t record;
-
-   /* NAME */
-   // TODO: the code handling compression has a bug, when double compression 
-   //       is encountered.
-   std::string NAME;
-   cout << "record_offset: " << record_offset << endl;
-   for ( ; ; ) {
-      label_size = *buffer_cpy;
-      buffer_cpy += 1;
-      bytes_read += 1;
-
-      if ( label_size == (char)0 ) {
-         break;
-      }
-
-      cout << "label size: " << (int)label_size << endl;
-      if ( ( label_size >> 6 ) == 3 ) { // Handle compression
-         label_size = label_size << 2;
-         uint16_t new_offset = label_size >> 2;
-         cout << "new offset: " << new_offset << endl;
-         new_offset = new_offset << 8;
-         printf( "the char: %02hhX\n", (char)*buffer_cpy );
-         // cout << "new offset: " << (char)*buffer_cpy << endl;
-         uint16_t the_char = (uint16_t)*buffer_cpy;
-         the_char = the_char << 8;
-         the_char = the_char >> 8;
-         // new_offset = new_offset | (uint16_t)*buffer_cpy;
-         new_offset = new_offset | the_char;
-         cout << "new offset: " << new_offset << endl;
-
-         buffer_cpy = buffer + new_offset;
-         bytes_read += 1;
-         compressed_bytes_read = bytes_read = sizeof( new_offset );
-         // TODO: add assert( compressed_bytes_read == 2 )
-      } else if ( label_size <= 63 ) {
-         NAME += label_size;
-         for ( int i=0; i<label_size; ++i ) {
-            NAME += *buffer_cpy;
-            buffer_cpy += 1;
-            bytes_read += 1;
-         }
-      } else {
-         // TODO: notify the caller of a malformed question
-         cout << "Malformed question2" << endl;
-         break;
-      }
-   }
-   if ( compressed_bytes_read != 0 ) {
-      bytes_read = compressed_bytes_read;
-   }
-
-   buffer_cpy = buffer + record_offset + bytes_read;
-
-   /* TYPE */
-   uint16_t TYPE = ntohs( *(uint16_t*)buffer_cpy );
-   buffer_cpy += sizeof( TYPE );
-   bytes_read += sizeof( TYPE );
-
-   /* CLASS */
-   uint16_t CLASS = ntohs( *(uint16_t*)buffer_cpy );
-   buffer_cpy += sizeof( CLASS );
-   bytes_read += sizeof( CLASS );
-
-   /* TTL */
-   uint32_t TTL = ntohl( *(uint32_t*)buffer_cpy );
-   buffer_cpy += sizeof( TTL );
-   bytes_read += sizeof( TTL );
-
-   /* RDLENGTH */
-   uint16_t RDLENGTH = ntohs( *(uint16_t*)buffer_cpy );
-   buffer_cpy += sizeof( RDLENGTH );
-   bytes_read += sizeof( RDLENGTH );
-
-   /* RDATA */
-   std::string RDATA;
-   for ( uint16_t i=0; i<RDLENGTH; ++i ) {
-      RDATA += *( buffer_cpy + i );
-   }
-   bytes_read += RDLENGTH;
-
-   record.set_NAME( NAME );
-   record.set_TYPE( TYPE );
-   record.set_CLASS( CLASS );
-   record.set_TTL( TTL );
-   record.set_RDLENGTH( RDLENGTH );
-   record.set_RDATA( RDATA );
-
-   return { record, bytes_read };
+   return total_bytes_read;
 }
 
 std::string
 DNSMessage_rr_t::hl_to_IPAddr( uint32_t ip_integer ) {
-   ip_integer = ntohl( ip_integer );
    std::string IPAddr;
+
+   ip_integer = ntohl( ip_integer );
    ssize_t i=0;
    for ( ; i<sizeof( ip_integer ) - 1; ++i ) {
       IPAddr += std::to_string( (char) ip_integer );
@@ -308,8 +238,73 @@ DNSMessage_rr_t::hl_to_IPAddr( uint32_t ip_integer ) {
       ip_integer = ip_integer >> 8;
    }
    IPAddr += std::to_string( (char) ip_integer );
-  
-   // std::reverse( IPAddr.begin(), IPAddr.end() );
 
    return IPAddr;
+}
+
+ssize_t
+DNSMessage_rr::parse_records( ssize_t r_section_offset, RecordType type ) {
+   ssize_t offset = r_section_offset;
+   ssize_t total_bytes_read = 0;
+
+   r_records.clear();
+   ssize_t rr_count;
+   switch ( type ) {
+      case AN : rr_count = message_header->get_ANCOUNT(); break;
+      case NS : rr_count = message_header->get_NSCOUNT(); break;
+      case AR : rr_count = message_header->get_ARCOUNT(); break;
+      default: exit( EXIT_FAILURE );
+   };
+   for ( ssize_t i=0; i<rr_count; ++i ) {
+      DNSMessage_rr_t record;
+
+      // NAME
+      auto[ NAME, bytes_read ] = read_encoded_domain_name( 
+                     message_header->get_message_buffer(), offset );
+
+      const char* buffer_cpy = message_header->get_message_buffer();
+      buffer_cpy += offset;
+      buffer_cpy += bytes_read;
+
+      /* TYPE */
+      uint16_t TYPE = ntohs( *(uint16_t*)buffer_cpy );
+      buffer_cpy += sizeof( TYPE );
+      bytes_read += sizeof( TYPE );
+
+      /* CLASS */
+      uint16_t CLASS = ntohs( *(uint16_t*)buffer_cpy );
+      buffer_cpy += sizeof( CLASS );
+      bytes_read += sizeof( CLASS );
+
+      /* TTL */
+      uint32_t TTL = ntohl( *(uint32_t*)buffer_cpy );
+      buffer_cpy += sizeof( TTL );
+      bytes_read += sizeof( TTL );
+
+      /* RDLENGTH */
+      uint16_t RDLENGTH = ntohs( *(uint16_t*)buffer_cpy );
+      buffer_cpy += sizeof( RDLENGTH );
+      bytes_read += sizeof( RDLENGTH );
+
+      /* RDATA */
+      // TODO: this section need special treatment.
+      std::string RDATA;
+      for ( uint16_t i=0; i<RDLENGTH; ++i ) {
+         RDATA += *( buffer_cpy + i );
+      }
+      bytes_read += RDLENGTH;
+
+      record.set_NAME( NAME );
+      record.set_TYPE( TYPE );
+      record.set_CLASS( CLASS );
+      record.set_TTL( TTL );
+      record.set_RDLENGTH( RDLENGTH );
+      record.set_RDATA( RDATA );
+
+      r_records.push_back( record );
+      offset += bytes_read;
+      total_bytes_read += bytes_read;
+   }
+
+   return total_bytes_read;
 }
