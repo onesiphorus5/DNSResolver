@@ -243,13 +243,14 @@ DNSMessage_rr_t::hl_to_IPAddr( uint32_t ip_integer ) {
 }
 
 ssize_t
-DNSMessage_rr::parse_records( ssize_t r_section_offset, RecordType type ) {
+DNSMessage_rr::parse_records( ssize_t r_section_offset, 
+                              RecordType section_type ) {
    ssize_t offset = r_section_offset;
    ssize_t total_bytes_read = 0;
 
    r_records.clear();
    ssize_t rr_count;
-   switch ( type ) {
+   switch ( section_type ) {
       case AN : rr_count = message_header->get_ANCOUNT(); break;
       case NS : rr_count = message_header->get_NSCOUNT(); break;
       case AR : rr_count = message_header->get_ARCOUNT(); break;
@@ -287,11 +288,19 @@ DNSMessage_rr::parse_records( ssize_t r_section_offset, RecordType type ) {
       bytes_read += sizeof( RDLENGTH );
 
       /* RDATA */
-      // TODO: this section need special treatment.
       std::string RDATA;
-      for ( uint16_t i=0; i<RDLENGTH; ++i ) {
-         RDATA += *( buffer_cpy + i );
+      if ( TYPE ==  2 ) { // NS type
+         ssize_t rdata_offset =
+               (ssize_t) ( buffer_cpy - message_header->get_message_buffer() );
+         auto[ rdata, _ ] = read_encoded_domain_name( 
+               message_header->get_message_buffer(),  rdata_offset );
+         RDATA = rdata;
+      } else {
+         for ( uint16_t i=0; i<RDLENGTH; ++i ) {
+            RDATA += *( buffer_cpy + i );
+         }
       }
+      cout << "RDATA: " << RDATA << endl;
       bytes_read += RDLENGTH;
 
       record.set_NAME( NAME );

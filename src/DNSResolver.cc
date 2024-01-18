@@ -205,8 +205,6 @@ recursive_resolve( std::string domain_name ) {
 
       for ( int i=0; i<add_records.size(); ++i ) {
          auto record = add_records.get_record( i );
-         cout << "record name: " << record.get_NAME() << endl;
-         cout << "record type: " << record.get_TYPE() << endl;
       }
 
       // TODO: add name server addrs to the stack
