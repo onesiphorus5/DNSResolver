@@ -2,7 +2,6 @@
 #include "connection.h"
 #include <stack>
 #include <vector>
-#include <unordered_map>
 #include <iostream>
 
 using namespace std;
@@ -189,6 +188,11 @@ recursive_resolve( std::string domain_name ) {
       DNSMessage_rr answers( &reply_header );
       bytes_read = answers.parse_records( offset, RecordType::AN );
       offset += bytes_read;
+      // TODO: do more checks!
+      for ( auto answer : answers.get_records() ) {
+         uint32_t ans_addr = *(uint32_t*)answer.get_RDATA().c_str();
+         resolved_IPs.push_back( ans_addr );
+      }
       if ( answers.size() > 0 ) {
          break;
       }
@@ -203,11 +207,19 @@ recursive_resolve( std::string domain_name ) {
       bytes_read = add_records.parse_records( offset, RecordType::AR );
       offset += bytes_read;
 
-      for ( int i=0; i<add_records.size(); ++i ) {
-         auto record = add_records.get_record( i );
-      }
-
       // TODO: add name server addrs to the stack
+      // for ( ssize_t i=0; i<ns_records.size(); ++i ) {
+      for ( auto ns_record : ns_records.get_records() ) {
+         std::string ns_domain = ns_record.get_RDATA();
+         if ( add_records.has_record( ns_domain ) ) {
+            auto record = add_records.get_record( ns_domain );
+            if ( record.get_TYPE() == 1 ) { // Only IPv4 is supported
+               uint32_t ns_addr = *(uint32_t*)record.get_RDATA().c_str();
+               // std::string ns_addr_str = to_IPAddr_str( ns_addr );
+               nameServer_addrs.push( to_IPAddr_str(ns_addr) );
+            }
+         }
+      }
 
    }
 

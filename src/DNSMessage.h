@@ -6,11 +6,14 @@
 #include <string>
 #include <tuple>
 #include <vector>
+#include <unordered_map>
 
 #include <iostream>
 
-// Helper function
+// Helper functions
+std::string encode_domain_name( std::string encode_domain_name );
 std::tuple<std::string, ssize_t> read_encoded_domain_name( char const*, ssize_t );
+std::string to_IPAddr_str( uint32_t );
 
 // Header format
 // https://datatracker.ietf.org/doc/html/rfc1035#section-4.1.1
@@ -117,7 +120,7 @@ private:
    uint16_t    QTYPE;
    uint16_t    QCLASS;
 
-   std::string encode_domain_name();
+   // std::string encode_domain_name();
 
 public:
    DNSMessage_question_t() : 
@@ -125,7 +128,7 @@ public:
 
    DNSMessage_question_t( std::string d_name ) : 
       domain_name{d_name}, QTYPE{0}, QCLASS{0} {
-      QNAME = encode_domain_name();
+      QNAME = encode_domain_name( domain_name );
    }
 
    void set_QNAME( std::string qname ) { QNAME = qname; }
@@ -192,9 +195,6 @@ public:
    uint32_t get_TTL()      { return TTL; }
    uint16_t get_RDLENGTH() { return RDLENGTH; }
    std::string get_RDATA() { return RDATA; }
-
-   static std::tuple<DNSMessage_rr_t, ssize_t> parse_resource_record( const char*, ssize_t );
-   static std::string hl_to_IPAddr( uint32_t );
 };
 
 enum RecordType {
@@ -205,20 +205,39 @@ enum RecordType {
 
 class DNSMessage_rr {
 private:
+   RecordType section_type;
    DNSMessage_header_t* message_header;
-   std::vector<DNSMessage_rr_t> r_records;
+   std::vector<DNSMessage_rr_t> r_records_vec;
+   std::unordered_map<std::string, DNSMessage_rr_t> r_records_map;
 
 public:
    DNSMessage_rr( DNSMessage_header_t* header ) : 
       message_header{ header } {}
-   
-   DNSMessage_rr_t& get_record( ssize_t index ) {
-      if ( index < 0 || index >= r_records.size() ) {
-         exit( EXIT_FAILURE );
-      }
-      return r_records[index];
+
+   void set_section_type( RecordType type ) { section_type = type; }
+
+   bool has_record( std::string name ) {
+      return r_records_map.count( name ) > 0;
    }
 
-   ssize_t size() { return r_records.size(); }
+   DNSMessage_rr_t& get_record( std::string name ) {
+      return r_records_map[name];
+   }
+
+   DNSMessage_rr_t& get_record( ssize_t index ) {
+      return r_records_vec[index];
+   }
+
+   std::vector<DNSMessage_rr_t>& get_records() {
+      return r_records_vec;
+   }
+
+   ssize_t size() { 
+      if ( section_type == AR ) {
+         return r_records_map.size(); 
+      } else {
+         return r_records_vec.size();
+      } 
+   }
    ssize_t parse_records( ssize_t, RecordType );
 };

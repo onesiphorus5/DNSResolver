@@ -52,8 +52,7 @@ int main(int argc, const char *argv[])
          perror( "recvfrom()" );
          exit( EXIT_FAILURE );
       }
-      IP_addr = ntohl( IP_addr );
-      std::cout << DNSMessage_rr_t::hl_to_IPAddr( IP_addr ) << std::endl;
+      std::cout << to_IPAddr_str( IP_addr ) << std::endl;
    }
 
    exit(EXIT_SUCCESS);

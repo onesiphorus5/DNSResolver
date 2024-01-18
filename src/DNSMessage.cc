@@ -8,6 +8,33 @@
 #include <iostream>
 using namespace std;
 
+std::string
+encode_domain_name( std::string domain_name ) {
+   std::string QNAME;
+
+   std::string delimiter = ".";
+   size_t left_pos=0, right_pos;
+   size_t label_size;
+   while ( ( right_pos = domain_name.find( delimiter, left_pos ) ) 
+           != std::string::npos ) {
+       label_size = right_pos - left_pos;
+       // label_size fits within a char
+       QNAME +=  (char) label_size;
+       QNAME += domain_name.substr( left_pos, label_size );
+
+       left_pos = right_pos+1;
+   }
+   label_size = domain_name.size() - left_pos;
+   // label_size fits within a char
+   QNAME += (char) label_size;
+   QNAME += domain_name.substr( left_pos, label_size );
+
+   // NULL character to mark the end
+   QNAME += (char) 0;
+
+   return QNAME;
+}
+
 std::tuple<std::string, ssize_t>
 read_encoded_domain_name( char const* message_buffer, 
                                       ssize_t section_offset ) {
@@ -68,6 +95,22 @@ read_encoded_domain_name( char const* message_buffer,
    }
 
    return { NAME, bytes_read };
+}
+
+std::string
+to_IPAddr_str( uint32_t ip_integer ) {
+   std::string IPAddr;
+
+   ssize_t i=0;
+   for ( ; i<sizeof( ip_integer ) - 1; ++i ) {
+      IPAddr += std::to_string( (uint8_t) ip_integer );
+      IPAddr +=  ".";
+
+      ip_integer = ip_integer >> 8;
+   }
+   IPAddr += std::to_string( (uint8_t) ip_integer );
+
+   return IPAddr;
 }
 
 std::string
@@ -141,40 +184,12 @@ DNSMessage_header_t::parse_header() {
    this->RCODE  = codes & ( 0b1111 );
 }
 
-// It is assumed domain names passed to the function have 
-// the following format:
-// "<nth-level domain>...<third-level domain>.<second-level domain>.<top-level domain>"
-std::string
-DNSMessage_question_t::encode_domain_name() {
-   std::string QNAME;
 
-   std::string delimiter = ".";
-   size_t left_pos=0, right_pos;
-   size_t label_size;
-   while ( ( right_pos = domain_name.find( delimiter, left_pos ) ) 
-           != std::string::npos ) {
-       label_size = right_pos - left_pos;
-       // label_size fits within a char
-       QNAME +=  (char) label_size;
-       QNAME += domain_name.substr( left_pos, label_size );
-
-       left_pos = right_pos+1;
-   }
-   label_size = domain_name.size() - left_pos;
-   // label_size fits within a char
-   QNAME += (char) label_size;
-   QNAME += domain_name.substr( left_pos, label_size );
-
-   // NULL character to mark the end
-   QNAME += (char) 0;
-
-   return QNAME;
-}
 
 std::string
 DNSMessage_question_t::serialize() {
   std::string question_bytes;
-  question_bytes += encode_domain_name();
+  question_bytes += encode_domain_name( domain_name );
 
   question_bytes += (char) ( QTYPE >> 8 );
   question_bytes += (char) QTYPE;
@@ -225,30 +240,18 @@ DNSMessage_question::parse_questions( ssize_t q_section_offset ) {
    return total_bytes_read;
 }
 
-std::string
-DNSMessage_rr_t::hl_to_IPAddr( uint32_t ip_integer ) {
-   std::string IPAddr;
 
-   ip_integer = ntohl( ip_integer );
-   ssize_t i=0;
-   for ( ; i<sizeof( ip_integer ) - 1; ++i ) {
-      IPAddr += std::to_string( (char) ip_integer );
-      IPAddr +=  ".";
-
-      ip_integer = ip_integer >> 8;
-   }
-   IPAddr += std::to_string( (char) ip_integer );
-
-   return IPAddr;
-}
 
 ssize_t
 DNSMessage_rr::parse_records( ssize_t r_section_offset, 
                               RecordType section_type ) {
+   set_section_type( section_type );
+
    ssize_t offset = r_section_offset;
    ssize_t total_bytes_read = 0;
 
-   r_records.clear();
+   r_records_vec.clear();
+   r_records_map.clear();
    ssize_t rr_count;
    switch ( section_type ) {
       case AN : rr_count = message_header->get_ANCOUNT(); break;
@@ -300,9 +303,8 @@ DNSMessage_rr::parse_records( ssize_t r_section_offset,
             RDATA += *( buffer_cpy + i );
          }
       }
-      cout << "RDATA: " << RDATA << endl;
       bytes_read += RDLENGTH;
-
+      
       record.set_NAME( NAME );
       record.set_TYPE( TYPE );
       record.set_CLASS( CLASS );
@@ -310,9 +312,17 @@ DNSMessage_rr::parse_records( ssize_t r_section_offset,
       record.set_RDLENGTH( RDLENGTH );
       record.set_RDATA( RDATA );
 
-      r_records.push_back( record );
       offset += bytes_read;
       total_bytes_read += bytes_read;
+
+      if ( section_type == AR && TYPE != 1 ) { // Only IPv4 is being handled
+         continue;
+      }
+      if ( section_type == AR ) {
+         r_records_map[ NAME ] = record;
+      } else {
+         r_records_vec.push_back( record );
+      }
    }
 
    return total_bytes_read;
