@@ -274,6 +274,9 @@ DNSMessage_rr::parse_records( ssize_t r_section_offset,
       uint16_t TYPE = ntohs( *(uint16_t*)buffer_cpy );
       buffer_cpy += sizeof( TYPE );
       bytes_read += sizeof( TYPE );
+     cout << "NAME: " << NAME << endl;
+     cout << "TYPE: " << TYPE << endl;
+     cout << "section type: " << section_type << endl;
 
       /* CLASS */
       uint16_t CLASS = ntohs( *(uint16_t*)buffer_cpy );

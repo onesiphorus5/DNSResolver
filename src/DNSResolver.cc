@@ -11,7 +11,7 @@ using namespace std;
 
 void handle_DNSResolver_client( int, struct sockaddr_un, std::string );
 std::tuple<char*, ssize_t> dns_request( std::string, std::string );
-std::vector<uint32_t> recursive_resolve( std::string domain_name );
+std::vector<uint32_t> iteratively_resolve( std::string domain_name );
 
 // std::vector<uint32_t> resolve_domain_name( std::string );
 
@@ -57,7 +57,7 @@ handle_DNSResolver_client( int resolver_to_client_socket,
    // if domain name is in the cache return the resolved ip
 
    /* Resolve domain name */
-   std::vector<uint32_t> IP_addrs = recursive_resolve( domain_name );
+   std::vector<uint32_t> IP_addrs = iteratively_resolve( domain_name );
 
    /* Send resolved IP addresses to client */
    // 1. Send the number of IP addresses
@@ -162,7 +162,7 @@ dns_request( std::string addr, std::string domain_name ) {
 }
 
 std::vector<uint32_t>
-recursive_resolve( std::string domain_name ) {
+iteratively_resolve( std::string domain_name ) {
    std::stack<std::string> nameServer_addrs;
    nameServer_addrs.push( root_server_ip );
 
@@ -188,7 +188,8 @@ recursive_resolve( std::string domain_name ) {
       DNSMessage_rr answers( &reply_header );
       bytes_read = answers.parse_records( offset, RecordType::AN );
       offset += bytes_read;
-      // TODO: do more checks!
+
+      // TODO: handle CNAME records
       for ( auto answer : answers.get_records() ) {
          uint32_t ans_addr = *(uint32_t*)answer.get_RDATA().c_str();
          resolved_IPs.push_back( ans_addr );
@@ -207,8 +208,7 @@ recursive_resolve( std::string domain_name ) {
       bytes_read = add_records.parse_records( offset, RecordType::AR );
       offset += bytes_read;
 
-      // TODO: add name server addrs to the stack
-      // for ( ssize_t i=0; i<ns_records.size(); ++i ) {
+      // Update the stack
       for ( auto ns_record : ns_records.get_records() ) {
          std::string ns_domain = ns_record.get_RDATA();
          if ( add_records.has_record( ns_domain ) ) {
