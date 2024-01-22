@@ -57,6 +57,7 @@ read_encoded_domain_name( char const* message_buffer,
       bytes_read += 1;
 
       if ( label_size == (char)0 ) {
+         NAME += (char)0;
          break;
       }
 
@@ -189,7 +190,8 @@ DNSMessage_header_t::parse_header() {
 std::string
 DNSMessage_question_t::serialize() {
   std::string question_bytes;
-  question_bytes += encode_domain_name( domain_name );
+  // question_bytes += encode_domain_name( domain_name );
+  question_bytes += QNAME;
 
   question_bytes += (char) ( QTYPE >> 8 );
   question_bytes += (char) QTYPE;
@@ -274,9 +276,6 @@ DNSMessage_rr::parse_records( ssize_t r_section_offset,
       uint16_t TYPE = ntohs( *(uint16_t*)buffer_cpy );
       buffer_cpy += sizeof( TYPE );
       bytes_read += sizeof( TYPE );
-     cout << "NAME: " << NAME << endl;
-     cout << "TYPE: " << TYPE << endl;
-     cout << "section type: " << section_type << endl;
 
       /* CLASS */
       uint16_t CLASS = ntohs( *(uint16_t*)buffer_cpy );
@@ -295,7 +294,7 @@ DNSMessage_rr::parse_records( ssize_t r_section_offset,
 
       /* RDATA */
       std::string RDATA;
-      if ( TYPE ==  2 ) { // NS type
+      if ( TYPE ==  2 || TYPE == 5 ) { // NS type or CNAME type
          ssize_t rdata_offset =
                (ssize_t) ( buffer_cpy - message_header->get_message_buffer() );
          auto[ rdata, _ ] = read_encoded_domain_name( 

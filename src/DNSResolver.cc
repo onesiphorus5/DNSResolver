@@ -11,7 +11,7 @@ using namespace std;
 
 void handle_DNSResolver_client( int, struct sockaddr_un, std::string );
 std::tuple<char*, ssize_t> dns_request( std::string, std::string );
-std::vector<uint32_t> iteratively_resolve( std::string domain_name );
+std::vector<uint32_t> iteratively_resolve( std::string qname );
 
 // std::vector<uint32_t> resolve_domain_name( std::string );
 
@@ -57,7 +57,8 @@ handle_DNSResolver_client( int resolver_to_client_socket,
    // if domain name is in the cache return the resolved ip
 
    /* Resolve domain name */
-   std::vector<uint32_t> IP_addrs = iteratively_resolve( domain_name );
+   std::string qname = encode_domain_name( domain_name );
+   std::vector<uint32_t> IP_addrs = iteratively_resolve( qname );
 
    /* Send resolved IP addresses to client */
    // 1. Send the number of IP addresses
@@ -88,7 +89,7 @@ handle_DNSResolver_client( int resolver_to_client_socket,
 
 
 std::tuple<char*, ssize_t> 
-dns_request( std::string addr, std::string domain_name ) {
+dns_request( std::string addr, std::string QNAME ) {
    /* Build DNS message */
    // Build DNS message header section
    srand( time(NULL) );
@@ -97,7 +98,7 @@ dns_request( std::string addr, std::string domain_name ) {
    message_header.set_QDCOUNT( 1 );    // one question
 
    // Build DNS message question section
-   DNSMessage_question_t question( domain_name );
+   DNSMessage_question_t question( QNAME );
    question.set_QTYPE( 1 );         // host address
    question.set_QCLASS( 1 );        // Internet
 
@@ -161,19 +162,41 @@ dns_request( std::string addr, std::string domain_name ) {
    return {total_buffer, offset};
 }
 
+struct domain_request {
+   std::string qname;
+   std::vector<uint32_t> server_addrs;
+
+   domain_request( std::string name, std::vector<uint32_t> addrs ) : 
+      qname{ name }, server_addrs{ addrs } {}
+};
+
 std::vector<uint32_t>
-iteratively_resolve( std::string domain_name ) {
-   std::stack<std::string> nameServer_addrs;
-   nameServer_addrs.push( root_server_ip );
+iteratively_resolve( std::string qname ) {
+   std::stack<domain_request> request_stack;
+   request_stack.push(domain_request( qname, {} ) );
+
+   srand( time( NULL ) );
 
    std::vector<uint32_t> resolved_IPs;
 
-   while ( !nameServer_addrs.empty() ) {
-      std::string addr = nameServer_addrs.top();
-      nameServer_addrs.pop();
+   int iter_count = 0;
+   while ( !request_stack.empty() ) {
+      iter_count++;
+
+      domain_request request = request_stack.top();
+      std::string server_addr;
+      if ( request.server_addrs.empty() ) {
+         server_addr = root_server_ip;
+      } else {
+         ssize_t addrs_count = request.server_addrs.size();
+         // Pick a random address to use.
+         server_addr = \
+            to_IPAddr_str( request.server_addrs[ rand() % addrs_count ] );
+      }
 
       ssize_t offset = 0;
-      auto[reply_buffer, reply_buffer_size] = dns_request( addr, domain_name );
+      auto[reply_buffer, reply_buffer_size] = \
+                     dns_request( server_addr, request.qname );
 
       // Header section
       DNSMessage_header_t reply_header( reply_buffer, reply_buffer_size );
@@ -189,15 +212,6 @@ iteratively_resolve( std::string domain_name ) {
       bytes_read = answers.parse_records( offset, RecordType::AN );
       offset += bytes_read;
 
-      // TODO: handle CNAME records
-      for ( auto answer : answers.get_records() ) {
-         uint32_t ans_addr = *(uint32_t*)answer.get_RDATA().c_str();
-         resolved_IPs.push_back( ans_addr );
-      }
-      if ( answers.size() > 0 ) {
-         break;
-      }
-
       // Authoritative name server section
       DNSMessage_rr ns_records( &reply_header );
       bytes_read = ns_records.parse_records( offset, RecordType::NS );
@@ -206,21 +220,65 @@ iteratively_resolve( std::string domain_name ) {
       // Additional records section
       DNSMessage_rr add_records( &reply_header );
       bytes_read = add_records.parse_records( offset, RecordType::AR );
-      offset += bytes_read;
 
-      // Update the stack
-      for ( auto ns_record : ns_records.get_records() ) {
-         std::string ns_domain = ns_record.get_RDATA();
-         if ( add_records.has_record( ns_domain ) ) {
-            auto record = add_records.get_record( ns_domain );
-            if ( record.get_TYPE() == 1 ) { // Only IPv4 is supported
-               uint32_t ns_addr = *(uint32_t*)record.get_RDATA().c_str();
-               // std::string ns_addr_str = to_IPAddr_str( ns_addr );
-               nameServer_addrs.push( to_IPAddr_str(ns_addr) );
-            }
+      // Processing the DNS reply sections
+      std::vector<std::string> cname_aliases;
+      std::vector<uint32_t> ans_IPs;
+      for ( auto answer : answers.get_records() ) {
+         if ( answer.get_TYPE() == 1 ) { 
+            uint32_t ans_addr = *(uint32_t*)answer.get_RDATA().c_str();
+            ans_IPs.push_back( ans_addr );
+         } else if ( answer.get_TYPE() == 28 ) {
+            cout << "Only IPv4 is being handled" << endl;
+         } else if ( answer.get_TYPE() == 5 ) {
+            cname_aliases.push_back( answer.get_RDATA() );
+         } else {
+            cout << "Malformed reply!" << endl;
+            exit( EXIT_FAILURE );
          }
       }
+      // Case 1: the reply to the original request has an ANS section 
+      //         with type1 records
+      if ( request_stack.size() == 1 ) {
+         if ( ans_IPs.size() > 0 ) {
+            resolved_IPs = ans_IPs;
+            break;
+         }
+      }
+      // Case 2: the reply has an ANS section with type1 records, 
+      //         but it's not for the original request
+      if ( ans_IPs.size() > 0 ) {
+         request_stack.pop();
+         domain_request& top_request = request_stack.top();
+         top_request.server_addrs = ans_IPs;
+         continue;
+      }
+      // Case 3: the reply has an ANS section with type5 record(s)
+      if ( cname_aliases.size() > 0 ) {
+         domain_request& top_request = request_stack.top();
+         top_request.qname = cname_aliases[ rand() % cname_aliases.size() ];
+         top_request.server_addrs = {};
+      }
 
+      std::vector<uint32_t> ns_addrs;
+      for ( auto record : ns_records.get_records() ) {
+         std::string ns_domain = record.get_RDATA();
+         if ( add_records.has_record( ns_domain ) ) {
+            uint32_t ns_addr = *(uint32_t*)add_records.\
+                     get_record( ns_domain ).get_RDATA().c_str();
+            ns_addrs.push_back( ns_addr );
+         }
+      }
+      if ( ns_addrs.size() > 0 ) {
+         domain_request& top_request = request_stack.top();
+         top_request.server_addrs = ns_addrs;
+      } else if ( ns_records.size() > 0 ) {
+         ssize_t ns_size = ns_records.size();
+         std::string ns_domain = \
+                     ns_records.get_records()[ rand() % ns_size ].get_RDATA();
+         auto ns_request = domain_request( ns_domain, {} );
+         request_stack.push( ns_request );
+      }
    }
 
    return resolved_IPs;

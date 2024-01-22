@@ -115,7 +115,7 @@ public:
 
 struct DNSMessage_question_t {
 private:
-   std::string domain_name;
+   // std::string domain_name;
    std::string QNAME;
    uint16_t    QTYPE;
    uint16_t    QCLASS;
@@ -124,11 +124,13 @@ private:
 
 public:
    DNSMessage_question_t() : 
-      domain_name{}, QNAME{}, QTYPE{0}, QCLASS{0} {};
+      // domain_name{}, QNAME{}, QTYPE{0}, QCLASS{0} {};
+      QNAME{}, QTYPE{0}, QCLASS{0} {};
 
-   DNSMessage_question_t( std::string d_name ) : 
-      domain_name{d_name}, QTYPE{0}, QCLASS{0} {
-      QNAME = encode_domain_name( domain_name );
+   DNSMessage_question_t( std::string qname ) : 
+      // domain_name{d_name}, QTYPE{0}, QCLASS{0} {
+      // QNAME = encode_domain_name( domain_name );
+      QNAME{qname}, QTYPE{0}, QCLASS{0} {
    }
 
    void set_QNAME( std::string qname ) { QNAME = qname; }
