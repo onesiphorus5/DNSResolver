@@ -11,15 +11,13 @@
 #include <net/if.h>
 
 #include <string>
+#include <vector>
 #include <iostream>
 #include <tuple>
 
 char RESOLVER_SOCK_PATH[] = "/tmp/DNSResolver";
 char CLIENT_SOCK_PATH[] = "/tmp/DNSClient";
-// TODO: automate this part by:
-// 1. downloading https://www.internic.net/domain/named.root
-// 2. parsing the file to get an IP address of one of the root servers.
-const char* root_server_ip   = "198.41.0.4";
+std::vector<std::string> root_server_ips;
 const char* DNS_port = "53";
 
 struct sockaddr_un unixDomain_addr( const char*, bool remove_path );

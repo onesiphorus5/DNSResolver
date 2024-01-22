@@ -16,6 +16,24 @@ std::vector<uint32_t> iteratively_resolve( std::string qname );
 // std::vector<uint32_t> resolve_domain_name( std::string );
 
 int main() {
+   // Initialize root_server_ips
+   // https://www.internic.net/domain/named.root
+   root_server_ips = {
+      "198.41.0.4",
+      "170.247.170.2",
+      "192.33.4.12",
+      "199.7.91.13",
+      "192.203.230.10",
+      "192.5.5.241",
+      "192.112.36.4",
+      "198.97.190.53",
+      "192.36.148.17",
+      "192.58.128.30",
+      "193.0.14.129",
+      "199.7.83.42",
+      "202.12.27.33"
+   };
+
    int resolver_socket = setup_socket( RESOLVER_SOCK_PATH );
 
    ssize_t buffer_size = MAX_DOMAIN_NAME_SIZE;
@@ -186,7 +204,7 @@ iteratively_resolve( std::string qname ) {
       domain_request request = request_stack.top();
       std::string server_addr;
       if ( request.server_addrs.empty() ) {
-         server_addr = root_server_ip;
+         server_addr = root_server_ips[ rand() % root_server_ips.size() ];
       } else {
          ssize_t addrs_count = request.server_addrs.size();
          // Pick a random address to use.
